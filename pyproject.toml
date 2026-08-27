@@ -1,0 +1,75 @@
+[project]
+name = "home-assistant-sigur"
+version = "0.1.0"
+description = "Unofficial Home Assistant integration for the Sigur access control system over the OIF protocol"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Gennadii Lobkov" }]
+
+[project.urls]
+Homepage = "https://github.com/gOsToFf/home-assistant-sigur"
+Issues = "https://github.com/gOsToFf/home-assistant-sigur/issues"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = [".git", ".venv", "docs", "scripts"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "C4", "UP", "D", "SIM", "RUF",
+    "ASYNC", "S", "T20", "PTH", "TRY", "N", "ANN",
+]
+ignore = [
+    "D203",     # incompatible with D211
+    "D213",     # incompatible with D212
+    "D401",     # many docstrings here describe a value, not an action
+    "TRY003",   # long messages inside raise are deliberate here
+    "TRY400",   # logger.error is intentional where a traceback adds nothing
+    "ANN401",   # protocol payloads really are Any
+    "ASYNC109", # per-command timeouts are part of this client's public API
+    "RUF001",   # Cyrillic literals come from the protocol specification
+    "RUF002",
+    "RUF003",
+    "S104",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",    # asserts are the point of a test
+    "S105",
+    "S106",
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN201",
+    "ANN202",
+    "D103",
+    "SLF001",  # tests may reach into the fake server's internals
+    "PLC0415",
+]
+"scripts/*" = ["T201", "E402"]
+# Constant names such as SERVICE_ALLOW_PASS and OPT_WEBHOOK_SECRET are not
+# secrets; the values they hold are option keys, never credentials.
+"custom_components/sigur/const.py" = ["S105"]
+"custom_components/sigur/api/event_codes.py" = ["S105"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unused_ignores = false
+disallow_untyped_decorators = false
+files = ["custom_components/sigur"]
+
+[[tool.mypy.overrides]]
+module = ["homeassistant.*", "voluptuous.*"]
+ignore_missing_imports = true

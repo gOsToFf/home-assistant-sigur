@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- home-assistant-sigur ---
+.idea/
+# Source material and local credentials: the vendor OIF specification and
+# config.yml, which holds production secrets. This repository is published,
+# so neither may ever be committed.
+.common/
+# Throwaway Home Assistant instance used for manual testing
+.dev-ha/
+# Local secrets for the optional read-only probe script
+scripts/.env
