@@ -13,19 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
 
-      - name: Check that the tag matches manifest.json
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          manifest="$(python -c "import json;print(json.load(open('custom_components/sigur/manifest.json'))['version'])")"
-          if [ "$tag" != "$manifest" ]; then
-            echo "Tag $tag does not match manifest version $manifest" >&2
-            exit 1
-          fi
+      - name: Derive the release metadata
+        id: meta
+        # Fails the release when the tag disagrees with manifest.json or the
+        # changelog has no section for it, and decides the pre-release flag
+        # from the version so a beta can never ship to everyone by accident.
+        run: python scripts/release_metadata.py "${GITHUB_REF_NAME}" --github-output
 
       - name: Create the release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          body_path: CHANGELOG.md
+          name: ${{ steps.meta.outputs.version }}
+          body: ${{ steps.meta.outputs.notes }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
           fail_on_unmatched_files: false
