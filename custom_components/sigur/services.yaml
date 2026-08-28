@@ -1,0 +1,49 @@
+set_access_point_mode:
+  target:
+    entity:
+      integration: sigur
+      domain: select
+  fields:
+    mode:
+      required: true
+      example: locked
+      selector:
+        select:
+          options:
+            - normal
+            - locked
+            - unlocked
+          translation_key: access_point_mode
+    confirm_all_access_points:
+      required: false
+      default: false
+      advanced: true
+      selector:
+        boolean:
+
+allow_pass:
+  target:
+    entity:
+      integration: sigur
+      domain: select
+  fields:
+    direction:
+      required: false
+      default: unknown
+      selector:
+        select:
+          options:
+            - in
+            - out
+            - unknown
+          translation_key: pass_direction
+    object_id:
+      required: false
+      example: 10
+      selector:
+        text:
+
+refresh:
+  target:
+    entity:
+      integration: sigur
