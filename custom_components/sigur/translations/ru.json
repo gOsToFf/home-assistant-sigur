@@ -135,17 +135,22 @@
   },
   "entity": {
     "binary_sensor": {
-      "connectivity": { "name": "Связь" },
-      "door": { "name": "Дверь" }
+      "connectivity": {
+        "name": "Связь"
+      },
+      "door": {
+        "name": "Дверь"
+      }
     },
-    "select": {
-      "mode": {
-        "name": "Режим",
-        "state": {
-          "normal": "Нормальный",
-          "locked": "Заблокировано",
-          "unlocked": "Разблокировано"
-        }
+    "button": {
+      "allow_pass_in": {
+        "name": "Разрешить вход"
+      },
+      "allow_pass_out": {
+        "name": "Разрешить выход"
+      },
+      "allow_pass_unknown": {
+        "name": "Разрешить проход"
       }
     },
     "event": {
@@ -183,20 +188,56 @@
         }
       }
     },
+    "select": {
+      "mode": {
+        "name": "Режим",
+        "state": {
+          "normal": "Нормальный",
+          "locked": "Заблокировано",
+          "unlocked": "Разблокировано"
+        }
+      }
+    },
     "sensor": {
-      "last_updated": { "name": "Последнее обновление" },
-      "last_error": { "name": "Последняя ошибка" },
-      "zone_a": { "name": "Зона входа" },
-      "zone_b": { "name": "Зона выхода" },
-      "last_pass_time": { "name": "Время последнего прохода" },
-      "last_pass_direction": { "name": "Направление последнего прохода" },
-      "last_event_type": { "name": "Тип последнего события" },
-      "last_pass_object_id": { "name": "ID объекта последнего прохода" },
-      "last_pass_object_name": { "name": "Имя объекта последнего прохода" },
-      "connection_state": { "name": "Соединение" },
-      "subscribe_mode": { "name": "Режим подписки" },
-      "access_point_count": { "name": "Точек доступа" },
-      "last_event_at": { "name": "Последнее событие" }
+      "last_updated": {
+        "name": "Последнее обновление"
+      },
+      "last_error": {
+        "name": "Последняя ошибка"
+      },
+      "zone_a": {
+        "name": "Зона входа"
+      },
+      "zone_b": {
+        "name": "Зона выхода"
+      },
+      "last_pass_time": {
+        "name": "Время последнего прохода"
+      },
+      "last_pass_direction": {
+        "name": "Направление последнего прохода"
+      },
+      "last_event_type": {
+        "name": "Тип последнего события"
+      },
+      "last_pass_object_id": {
+        "name": "ID объекта последнего прохода"
+      },
+      "last_pass_object_name": {
+        "name": "Имя объекта последнего прохода"
+      },
+      "connection_state": {
+        "name": "Соединение"
+      },
+      "subscribe_mode": {
+        "name": "Режим подписки"
+      },
+      "access_point_count": {
+        "name": "Точек доступа"
+      },
+      "last_event_at": {
+        "name": "Последнее событие"
+      }
     }
   },
   "device_automation": {
@@ -325,10 +366,19 @@
   },
   "exceptions": {
     "control_disabled": {
-      "message": "Управление системой Sigur «{name}» отключено. Сначала включите его в настройках интеграции."
+      "message": "Управление системой Sigur «{name}» отключено. Сначала включите «Разрешить управление точками доступа» в настройках интеграции."
     },
     "unknown_access_point": {
       "message": "Неизвестная точка доступа Sigur: {ap_id}."
+    },
+    "unknown_mode": {
+      "message": "Неизвестный режим точки доступа Sigur: {mode}."
+    },
+    "set_mode_failed": {
+      "message": "Sigur отклонил смену режима точки доступа {ap_id}: {error}"
+    },
+    "allow_pass_failed": {
+      "message": "Sigur отклонил проход через точку доступа {ap_id}: {error}"
     }
   }
 }

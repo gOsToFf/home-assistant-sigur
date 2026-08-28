@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- One-shot pass buttons on every access point: "Allow entry" and "Allow exit"
+  send a single `ALLOWPASS` without changing the access point's mode. A third,
+  directionless button is available but disabled by default. The buttons only
+  exist while control is enabled, so a button that would always refuse is never
+  shown.
+
+### Changed
+
+- Errors raised by the integration now carry translation keys, so refusals such
+  as "control is disabled" and "unknown access point" appear in the Home
+  Assistant language instead of always in English.
+
 ## [0.1.0] - 2026-08-27
 
 First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025

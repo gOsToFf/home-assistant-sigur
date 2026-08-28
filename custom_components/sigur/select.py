@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import ApMode, SigurError
+from .const import DOMAIN
 from .coordinator import SigurDataUpdateCoordinator
 from .entity import SigurAccessPointEntity
 from .runtime import SigurConfigEntry
@@ -64,13 +65,20 @@ class SigurModeSelect(SigurAccessPointEntity, SelectEntity):
         try:
             mode = ApMode(option.upper())
         except ValueError as err:
-            raise HomeAssistantError(
-                f"Unknown Sigur access point mode: {option}"
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_mode",
+                translation_placeholders={"mode": option},
             ) from err
         try:
             await self.hub.async_set_mode([self._ap_id], mode)
         except SigurError as err:
             raise HomeAssistantError(
-                f"Sigur refused to set the mode of access point {self._ap_id}: {err}"
+                translation_domain=DOMAIN,
+                translation_key="set_mode_failed",
+                translation_placeholders={
+                    "ap_id": str(self._ap_id),
+                    "error": str(err),
+                },
             ) from err
         self.async_write_ha_state()

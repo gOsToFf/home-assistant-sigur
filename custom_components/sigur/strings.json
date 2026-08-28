@@ -135,17 +135,22 @@
   },
   "entity": {
     "binary_sensor": {
-      "connectivity": { "name": "Link" },
-      "door": { "name": "Door" }
+      "connectivity": {
+        "name": "Link"
+      },
+      "door": {
+        "name": "Door"
+      }
     },
-    "select": {
-      "mode": {
-        "name": "Mode",
-        "state": {
-          "normal": "Normal",
-          "locked": "Locked",
-          "unlocked": "Unlocked"
-        }
+    "button": {
+      "allow_pass_in": {
+        "name": "Allow entry"
+      },
+      "allow_pass_out": {
+        "name": "Allow exit"
+      },
+      "allow_pass_unknown": {
+        "name": "Allow pass"
       }
     },
     "event": {
@@ -183,20 +188,56 @@
         }
       }
     },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "normal": "Normal",
+          "locked": "Locked",
+          "unlocked": "Unlocked"
+        }
+      }
+    },
     "sensor": {
-      "last_updated": { "name": "Last updated" },
-      "last_error": { "name": "Last error" },
-      "zone_a": { "name": "Entry zone" },
-      "zone_b": { "name": "Exit zone" },
-      "last_pass_time": { "name": "Last pass time" },
-      "last_pass_direction": { "name": "Last pass direction" },
-      "last_event_type": { "name": "Last event type" },
-      "last_pass_object_id": { "name": "Last pass object ID" },
-      "last_pass_object_name": { "name": "Last pass object name" },
-      "connection_state": { "name": "Connection" },
-      "subscribe_mode": { "name": "Subscription mode" },
-      "access_point_count": { "name": "Access points" },
-      "last_event_at": { "name": "Last event" }
+      "last_updated": {
+        "name": "Last updated"
+      },
+      "last_error": {
+        "name": "Last error"
+      },
+      "zone_a": {
+        "name": "Entry zone"
+      },
+      "zone_b": {
+        "name": "Exit zone"
+      },
+      "last_pass_time": {
+        "name": "Last pass time"
+      },
+      "last_pass_direction": {
+        "name": "Last pass direction"
+      },
+      "last_event_type": {
+        "name": "Last event type"
+      },
+      "last_pass_object_id": {
+        "name": "Last pass object ID"
+      },
+      "last_pass_object_name": {
+        "name": "Last pass object name"
+      },
+      "connection_state": {
+        "name": "Connection"
+      },
+      "subscribe_mode": {
+        "name": "Subscription mode"
+      },
+      "access_point_count": {
+        "name": "Access points"
+      },
+      "last_event_at": {
+        "name": "Last event"
+      }
     }
   },
   "device_automation": {
@@ -325,10 +366,19 @@
   },
   "exceptions": {
     "control_disabled": {
-      "message": "Control of the Sigur system {name} is disabled. Enable it in the integration options first."
+      "message": "Control of the Sigur system {name} is disabled. Turn on \"Allow controlling access points\" in the integration options first."
     },
     "unknown_access_point": {
       "message": "Unknown Sigur access point: {ap_id}."
+    },
+    "unknown_mode": {
+      "message": "Unknown Sigur access point mode: {mode}."
+    },
+    "set_mode_failed": {
+      "message": "Sigur refused to set the mode of access point {ap_id}: {error}"
+    },
+    "allow_pass_failed": {
+      "message": "Sigur refused a pass through access point {ap_id}: {error}"
     }
   }
 }

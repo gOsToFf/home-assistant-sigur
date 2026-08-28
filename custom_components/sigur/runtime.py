@@ -31,7 +31,11 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -69,6 +73,7 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_WEBHOOK_TIMEOUT,
+    DOMAIN,
     EVENT_SIGUR,
     MAX_BACKFILL_HOURS,
     MIN_SCAN_INTERVAL,
@@ -803,15 +808,18 @@ class SigurHub:
         """Fail unless the user opted into write access for this entry.
 
         Raises:
-            HomeAssistantError: when control is disabled, which is the default.
+            ServiceValidationError: when control is disabled, which is the
+                default. It is a validation error rather than a plain failure
+                because the fix is a setting the user can change, and it is
+                raised with a translation key so the message follows the
+                Home Assistant language.
 
         """
         if not self.options.enable_control:
-            from homeassistant.exceptions import HomeAssistantError
-
-            raise HomeAssistantError(
-                f"Control of the Sigur system '{self.server_name}' is disabled. "
-                "Enable it in the integration options first."
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="control_disabled",
+                translation_placeholders={"name": self.server_name},
             )
 
     async def async_set_mode(self, ap_ids: Iterable[int], mode: ApMode) -> None:
@@ -820,10 +828,12 @@ class SigurHub:
         ids = list(ap_ids)
         unknown = [ap_id for ap_id in ids if ap_id not in self.access_points]
         if unknown:
-            from homeassistant.exceptions import ServiceValidationError
-
             raise ServiceValidationError(
-                f"Unknown Sigur access point(s): {', '.join(map(str, unknown))}"
+                translation_domain=DOMAIN,
+                translation_key="unknown_access_point",
+                translation_placeholders={
+                    "ap_id": ", ".join(str(ap_id) for ap_id in unknown)
+                },
             )
         await self.async_ensure_command_connection()
         await self.api.set_access_point_mode(mode, ids)
@@ -840,9 +850,11 @@ class SigurHub:
         """Authorise a single pass through ``ap_id``."""
         self.assert_control_enabled()
         if ap_id not in self.access_points:
-            from homeassistant.exceptions import ServiceValidationError
-
-            raise ServiceValidationError(f"Unknown Sigur access point: {ap_id}")
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_access_point",
+                translation_placeholders={"ap_id": str(ap_id)},
+            )
         await self.async_ensure_command_connection()
         await self.api.allow_pass(ap_id, obj, direction)
 
