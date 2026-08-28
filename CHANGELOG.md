@@ -6,28 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- One-shot pass buttons on every access point: "Allow entry" and "Allow exit"
-  send a single `ALLOWPASS` without changing the access point's mode. A third,
-  directionless button is available but disabled by default. The buttons only
-  exist while control is enabled, so a button that would always refuse is never
-  shown.
-
-### Changed
-
-- Errors raised by the integration now carry translation keys, so refusals such
-  as "control is disabled" and "unknown access point" appear in the Home
-  Assistant language instead of always in English.
-
-### Fixed
-
-- The access object id was published on the event bus and forwarded to the
-  webhook regardless of the personal-data option, even though the event entity
-  and the diagnostics both withheld it. An object id is a stable identifier for
-  a person, so it now follows the same option everywhere.
-
-## [0.1.0] - 2026-08-27
+## [0.1.0] - 2026-08-28
 
 First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025
 (OIF 1.8, Sigur 1.6.3.14).
@@ -61,7 +40,16 @@ First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025
   and retries; disabled by default.
 - Diagnostics with full redaction of credentials, names and credential numbers,
   and repair issues for persistent problems.
-- Russian and English translations.
+- One-shot pass buttons on every access point: "Allow entry" and "Allow exit"
+  send a single `ALLOWPASS` without changing the access point's mode. A third,
+  directionless button is available but disabled by default. The buttons only
+  exist while control is enabled, so a button that would always refuse is never
+  shown.
+- Access object ids and names are withheld from entities, bus events,
+  diagnostics and the webhook unless the personal-data option is enabled, and
+  credential numbers are always masked.
+- Russian and English translations, with error messages that follow the Home
+  Assistant language.
 
 [Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0
