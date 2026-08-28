@@ -69,11 +69,14 @@ DEDUP_WINDOW: Final = 2000
 SERVICE_SET_ACCESS_POINT_MODE: Final = "set_access_point_mode"
 SERVICE_ALLOW_PASS: Final = "allow_pass"
 SERVICE_REFRESH: Final = "refresh"
+SERVICE_SET_CAMERA: Final = "set_access_point_camera"
 
 ATTR_MODE: Final = "mode"
 ATTR_DIRECTION: Final = "direction"
 ATTR_OBJECT_ID: Final = "object_id"
 ATTR_CONFIRM_ALL: Final = "confirm_all_access_points"
+ATTR_CAMERA_ENTITY_ID: Final = "camera_entity_id"
+ATTR_RTSP_URL: Final = "rtsp_url"
 
 # --- Storage ----------------------------------------------------------------
 
@@ -92,7 +95,7 @@ PANEL_URL_PATH: Final = "sigur"
 PANEL_TITLE: Final = "Sigur"
 PANEL_ICON: Final = "mdi:door-sliding"
 #: Bumped whenever the panel module changes, to bust the browser cache.
-PANEL_VERSION: Final = "0.2.0"
+PANEL_VERSION: Final = "0.2.0b2"
 
 # --- Repairs ----------------------------------------------------------------
 

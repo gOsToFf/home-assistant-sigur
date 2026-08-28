@@ -95,12 +95,15 @@ class SigurPanel extends HTMLElement {
     this._unsubscribe = null;
     this._filter = "";
     this._onlyProblems = false;
+    this._isAdmin = false;
+    this._editing = null;
   }
 
   /** Home Assistant assigns this on every state change. */
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    this._isAdmin = hass.user?.is_admin ?? false;
     if (first) {
       this._load();
       this._subscribe();
@@ -259,6 +262,7 @@ class SigurPanel extends HTMLElement {
             </label>
           </div>
           ${this._servers.map((server) => this._server(server)).join("")}
+          ${this._cameraOptions()}
         </main>
         <aside>
           <h2>События</h2>
@@ -335,6 +339,11 @@ class SigurPanel extends HTMLElement {
         </div>`
       : `<div class="mode-readonly"></div>`;
 
+    const gear = this._isAdmin
+      ? `<button class="gear" title="Привязать камеру"
+                 data-edit="${server.entry_id}:${ap.id}">&#9881;</button>`
+      : "";
+
     return `
       <article class="tile" data-ap="${server.entry_id}:${ap.id}"
                data-event-entity="${escapeHtml(ap.entities.event ?? "")}">
@@ -342,13 +351,117 @@ class SigurPanel extends HTMLElement {
         <div class="tile-head">
           <span class="dot"></span>
           <h4 title="${escapeHtml(ap.name)}">${escapeHtml(ap.name)}</h4>
+          ${gear}
         </div>
         <div class="tile-state">
           <span class="link"></span>
           <span class="door"></span>
         </div>
         ${controls}
+        ${this._isAdmin ? this._editor(server, ap) : ""}
       </article>`;
+  }
+
+  /**
+   * The camera binding editor, collapsed until the gear is pressed.
+   *
+   * Both kinds are offered because access points differ: a camera entity is
+   * what actually renders a picture, while a bare RTSP URL is kept for
+   * automations and for a future camera platform. The hint says so, so nobody
+   * fills in RTSP and waits for video that cannot appear.
+   */
+  _editor(server, ap) {
+    return `
+      <div class="editor" hidden>
+        <label>
+          <span>Камера</span>
+          <input class="camera-input" list="sigur-cameras" placeholder="camera.…"
+                 value="${escapeHtml(ap.camera_entity_id ?? "")}" />
+        </label>
+        <label>
+          <span>RTSP</span>
+          <input class="rtsp-input" placeholder="rtsp://…"
+                 value="${escapeHtml(ap.rtsp_url ?? "")}" />
+        </label>
+        <p class="hint">
+          Картинку на плитке даёт camera-сущность. RTSP хранится для
+          автоматизаций: браузер не играет его напрямую.
+        </p>
+        <div class="editor-actions">
+          <button class="save" data-save="${server.entry_id}:${ap.id}">Сохранить</button>
+          <button class="clear" data-clear="${server.entry_id}:${ap.id}">Очистить</button>
+        </div>
+      </div>`;
+  }
+
+  /** A datalist of every camera entity, so the field can be completed. */
+  _cameraOptions() {
+    if (!this._isAdmin) return "";
+    const options = Object.keys(this._hass.states)
+      .filter((id) => id.startsWith("camera."))
+      .sort()
+      .map((id) => {
+        const name = this._hass.states[id].attributes?.friendly_name ?? id;
+        return `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`;
+      })
+      .join("");
+    return `<datalist id="sigur-cameras">${options}</datalist>`;
+  }
+
+  _toggleEditor(key) {
+    const tile = this.shadowRoot.querySelector(`.tile[data-ap="${key}"]`);
+    const editor = tile?.querySelector(".editor");
+    if (!editor) return;
+    const opening = editor.hasAttribute("hidden");
+    for (const other of this.shadowRoot.querySelectorAll(".editor")) {
+      other.setAttribute("hidden", "");
+    }
+    if (opening) {
+      editor.removeAttribute("hidden");
+      editor.querySelector(".camera-input")?.focus();
+    }
+    this._editing = opening ? key : null;
+  }
+
+  async _saveBinding(key, { clear = false } = {}) {
+    const [entryId, apId] = key.split(":");
+    const tile = this.shadowRoot.querySelector(`.tile[data-ap="${key}"]`);
+    const cameraInput = tile?.querySelector(".camera-input");
+    const rtspInput = tile?.querySelector(".rtsp-input");
+    const camera = clear ? null : cameraInput?.value.trim() || null;
+    const rtsp = clear ? null : rtspInput?.value.trim() || null;
+
+    if (camera && !camera.startsWith("camera.")) {
+      this._toast("Идентификатор камеры должен начинаться с camera.");
+      return;
+    }
+
+    try {
+      await this._hass.callWS({
+        type: "sigur/panel/set_binding",
+        entry_id: entryId,
+        access_point_id: Number(apId),
+        camera_entity_id: camera,
+        rtsp_url: rtsp,
+      });
+    } catch (err) {
+      this._toast(err?.message ?? String(err));
+      return;
+    }
+
+    // Keep the local copy in step so the tile repaints without a round trip.
+    const server = this._servers.find((item) => item.entry_id === entryId);
+    const ap = server?.access_points.find((item) => item.id === Number(apId));
+    if (ap) {
+      ap.camera_entity_id = camera;
+      ap.rtsp_url = rtsp;
+    }
+    if (clear && cameraInput && rtspInput) {
+      cameraInput.value = "";
+      rtspInput.value = "";
+    }
+    this._toast(clear ? "Привязка удалена" : "Привязка сохранена");
+    this._render();
   }
 
   _bind() {
@@ -374,6 +487,21 @@ class SigurPanel extends HTMLElement {
     for (const button of this.shadowRoot.querySelectorAll("button.pass-btn")) {
       button.addEventListener("click", (event) =>
         this._press(event.currentTarget.dataset.press),
+      );
+    }
+    for (const gear of this.shadowRoot.querySelectorAll("button.gear")) {
+      gear.addEventListener("click", (event) =>
+        this._toggleEditor(event.currentTarget.dataset.edit),
+      );
+    }
+    for (const save of this.shadowRoot.querySelectorAll("button.save")) {
+      save.addEventListener("click", (event) =>
+        this._saveBinding(event.currentTarget.dataset.save),
+      );
+    }
+    for (const clear of this.shadowRoot.querySelectorAll("button.clear")) {
+      clear.addEventListener("click", (event) =>
+        this._saveBinding(event.currentTarget.dataset.clear, { clear: true }),
       );
     }
     for (const head of this.shadowRoot.querySelectorAll(".tile-head h4")) {
@@ -633,6 +761,62 @@ SigurPanel.styles = `
   .pass-btn:hover { filter: brightness(1.08); }
   .pass-btn:active { filter: brightness(.92); }
 
+  .gear {
+    margin-left: auto;
+    flex: none;
+    border: none;
+    background: none;
+    color: var(--secondary-text-color);
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .gear:hover { color: var(--primary-color); background: var(--secondary-background-color); }
+
+  .editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+    margin-top: 2px;
+    border-top: 1px solid var(--divider-color);
+  }
+  .editor[hidden] { display: none; }
+  .editor label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  .editor label span { color: var(--secondary-text-color); }
+  .editor input {
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--divider-color);
+    background: var(--secondary-background-color);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    min-width: 0;
+  }
+  .editor input:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
+  .editor .hint { margin: 0; font-size: 11px; color: var(--secondary-text-color); }
+  .editor-actions { display: flex; gap: 8px; }
+  .editor-actions button {
+    flex: 1;
+    padding: 7px;
+    border-radius: 8px;
+    border: 1px solid var(--divider-color);
+    background: var(--secondary-background-color);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .editor-actions .save {
+    border-color: transparent;
+    background: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
+  .editor-actions button:hover { filter: brightness(1.06); }
+
   aside {
     position: sticky;
     top: 16px;
@@ -664,4 +848,10 @@ SigurPanel.styles = `
   .feed .row.alarm .cat { color: var(--error-color, #db4437); font-weight: 500; }
 `;
 
-customElements.define("sigur-panel", SigurPanel);
+// The module can be evaluated more than once in a single page session - a
+// changed cache-busting version, or Home Assistant loading the panel again
+// after a reconnect. Defining the element twice throws, and the panel then
+// fails to load at all until a hard refresh.
+if (!customElements.get("sigur-panel")) {
+  customElements.define("sigur-panel", SigurPanel);
+}

@@ -300,6 +300,20 @@
     "refresh": {
       "name": "Refresh",
       "description": "Polls the targeted Sigur servers immediately."
+    },
+    "set_access_point_camera": {
+      "name": "Attach a camera",
+      "description": "Records which camera belongs to an access point. The camera entity is what shows a picture; the RTSP URL is stored for automations and a future camera platform. Calling this with neither field clears the binding.",
+      "fields": {
+        "camera_entity_id": {
+          "name": "Camera entity",
+          "description": "An existing camera entity. Its snapshot appears on the access point tile in the Sigur panel."
+        },
+        "rtsp_url": {
+          "name": "RTSP URL",
+          "description": "Stored as-is. A browser cannot play RTSP directly, so this alone does not display video anywhere."
+        }
+      }
     }
   },
   "selector": {

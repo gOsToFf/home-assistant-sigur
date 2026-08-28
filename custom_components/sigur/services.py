@@ -21,14 +21,17 @@ import voluptuous as vol
 
 from .api import ANONYMOUS, ApMode, Direction, SigurError
 from .const import (
+    ATTR_CAMERA_ENTITY_ID,
     ATTR_CONFIRM_ALL,
     ATTR_DIRECTION,
     ATTR_MODE,
     ATTR_OBJECT_ID,
+    ATTR_RTSP_URL,
     DOMAIN,
     SERVICE_ALLOW_PASS,
     SERVICE_REFRESH,
     SERVICE_SET_ACCESS_POINT_MODE,
+    SERVICE_SET_CAMERA,
 )
 from .runtime import SigurConfigEntry, SigurHub, SigurRuntimeData
 
@@ -61,6 +64,16 @@ ALLOW_PASS_SCHEMA = vol.Schema(
 
 REFRESH_SCHEMA = vol.Schema(_TARGET_SCHEMA)
 
+SET_CAMERA_SCHEMA = vol.Schema(
+    {
+        **_TARGET_SCHEMA,
+        vol.Optional(ATTR_CAMERA_ENTITY_ID): vol.Any(
+            None, vol.All(cv.string, cv.entity_domain("camera"))
+        ),
+        vol.Optional(ATTR_RTSP_URL): vol.Any(None, cv.string),
+    }
+)
+
 
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
@@ -78,6 +91,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_REFRESH, _async_refresh, schema=REFRESH_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_CAMERA, _async_set_camera, schema=SET_CAMERA_SCHEMA
     )
 
 
@@ -179,6 +195,25 @@ async def _async_allow_pass(call: ServiceCall) -> None:
                     f"Sigur '{hub.server_name}' refused the pass through "
                     f"access point {ap_id}: {err}"
                 ) from err
+
+
+async def _async_set_camera(call: ServiceCall) -> None:
+    """Handle ``sigur.set_access_point_camera``.
+
+    Attaching a camera is not a write to the access control system, so it is
+    not behind the control option; it only records which video belongs to
+    which door. Calling it with neither field clears the binding.
+    """
+    camera = call.data.get(ATTR_CAMERA_ENTITY_ID)
+    rtsp = call.data.get(ATTR_RTSP_URL)
+    for entry, ap_ids in _resolve_targets(call.hass, call).items():
+        runtime = getattr(entry, "runtime_data", None)
+        if runtime is None:
+            continue
+        for ap_id in sorted(ap_ids):
+            await runtime.bindings.async_set(
+                ap_id, camera_entity_id=camera, rtsp_url=rtsp
+            )
 
 
 async def _async_refresh(call: ServiceCall) -> None:

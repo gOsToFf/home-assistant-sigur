@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 from homeassistant.components import frontend
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 import pytest
+import voluptuous as vol
 
-from custom_components.sigur.const import OPT_ENABLE_CONTROL, PANEL_URL_PATH
+from custom_components.sigur.const import (
+    DOMAIN,
+    OPT_ENABLE_CONTROL,
+    PANEL_URL_PATH,
+    SERVICE_SET_CAMERA,
+)
 
 from .conftest import requires_home_assistant
 from .fake_oif_server import FakeAccessPoint, FakeSigurServer
@@ -272,3 +279,83 @@ async def test_two_servers_appear_separately(
     finally:
         await office.stop()
         await depot.stop()
+
+
+async def test_the_service_attaches_a_camera(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """``sigur.set_access_point_camera`` is the scriptable way to bind one."""
+    entry = await _setup(hass, server)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_CAMERA,
+        {
+            ATTR_ENTITY_ID: "select.glavnyi_vkhod_mode",
+            "camera_entity_id": "camera.entrance",
+            "rtsp_url": "rtsp://user:password@10.0.0.5:554/stream",
+        },
+        blocking=True,
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "sigur/panel/data"})
+    data = await client.receive_json()
+    points = {ap["id"]: ap for ap in data["result"]["servers"][0]["access_points"]}
+    assert points[1]["camera_entity_id"] == "camera.entrance"
+    assert points[1]["rtsp_url"] == "rtsp://user:password@10.0.0.5:554/stream"
+    assert entry.entry_id
+
+
+async def test_the_service_clears_a_binding(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """Calling it with neither field removes the binding."""
+    await _setup(hass, server)
+    for payload in (
+        {"camera_entity_id": "camera.entrance"},
+        {},
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_CAMERA,
+            {ATTR_ENTITY_ID: "select.glavnyi_vkhod_mode", **payload},
+            blocking=True,
+        )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "sigur/panel/data"})
+    data = await client.receive_json()
+    points = {ap["id"]: ap for ap in data["result"]["servers"][0]["access_points"]}
+    assert points[1]["camera_entity_id"] is None
+
+
+async def test_the_service_rejects_a_non_camera_entity(
+    hass: HomeAssistant, server: FakeSigurServer
+) -> None:
+    """Only a camera entity may be attached as one."""
+    await _setup(hass, server)
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_CAMERA,
+            {
+                ATTR_ENTITY_ID: "select.glavnyi_vkhod_mode",
+                "camera_entity_id": "light.kitchen",
+            },
+            blocking=True,
+        )
+
+
+async def test_attaching_a_camera_does_not_need_control_enabled(
+    hass: HomeAssistant, server: FakeSigurServer
+) -> None:
+    """Recording which camera watches a door opens nothing."""
+    await _setup(hass, server)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_CAMERA,
+        {
+            ATTR_ENTITY_ID: "select.glavnyi_vkhod_mode",
+            "camera_entity_id": "camera.entrance",
+        },
+        blocking=True,
+    )
+    assert not [line for line in server.received if line.startswith("SETAPMODE")]
