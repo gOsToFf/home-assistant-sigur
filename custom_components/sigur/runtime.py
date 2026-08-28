@@ -545,7 +545,10 @@ class SigurHub:
 
         self.hass.bus.async_fire(
             EVENT_SIGUR,
-            event.as_bus_payload(include_raw=self.options.debug_raw_events),
+            event.as_bus_payload(
+                include_raw=self.options.debug_raw_events,
+                include_personal=self.options.enable_personal_data,
+            ),
         )
         for listener in list(self._listeners):
             listener(event)

@@ -20,6 +20,13 @@ All notable changes to this project are documented here. The format follows
   as "control is disabled" and "unknown access point" appear in the Home
   Assistant language instead of always in English.
 
+### Fixed
+
+- The access object id was published on the event bus and forwarded to the
+  webhook regardless of the personal-data option, even though the event entity
+  and the diagnostics both withheld it. An object id is a stable identifier for
+  a person, so it now follows the same option everywhere.
+
 ## [0.1.0] - 2026-08-27
 
 First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025

@@ -88,11 +88,14 @@ async def test_a_pushed_event_reaches_the_bus(
 async def test_personal_data_is_withheld_by_default(
     hass: HomeAssistant, server: FakeSigurServer
 ) -> None:
-    """The object name is not published unless the user opted in."""
+    """Neither the name nor the object id is published unless the user opts in."""
     await _setup(hass, server)
     events = _capture(hass)
     await _push(hass, server, FakeEvent(WHEN, 4, 1, 6, 2, object_name="Иванов"))
     assert events[0].data["object_name"] is None
+    # An object id is a stable identifier for a person, so it is withheld by
+    # the same option that withholds the name.
+    assert events[0].data["object_id"] is None
     # The credential number is never published in full, opt-in or not.
     assert "29323" not in str(events[0].data)
 
@@ -106,6 +109,17 @@ async def test_personal_data_is_published_when_enabled(
     await _push(hass, server, FakeEvent(WHEN, 4, 1, 6, 2, object_name="Иванов"))
     assert events[0].data["object_name"] == "Иванов"
     assert events[0].data["object_id"] == 6
+
+
+async def test_the_event_entity_matches_the_bus_on_personal_data(
+    hass: HomeAssistant, server: FakeSigurServer
+) -> None:
+    """The entity attributes and the bus payload gate personal data alike."""
+    await _setup(hass, server)
+    await _push(hass, server, FakeEvent(WHEN, 4, 1, 6, 2, object_name="Иванов"))
+    attributes = hass.states.get("event.glavnyi_vkhod_last_event").attributes
+    assert "object_id" not in attributes
+    assert "object_name" not in attributes
 
 
 async def test_object_names_can_be_resolved_lazily(

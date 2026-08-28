@@ -141,8 +141,13 @@ class WebhookForwarder:
 
     def _payload(self, event: SigurEvent) -> dict[str, Any]:
         """Build the delivered payload, stripping personal data by default."""
-        payload = event.as_bus_payload(include_raw=False)
+        payload = event.as_bus_payload(
+            include_raw=False,
+            include_personal=self.hub.options.enable_personal_data,
+        )
         payload.pop("raw_message", None)
+        # The name needs a second, webhook-specific opt-in: sending it off the
+        # machine is a bigger step than showing it in the local UI.
         if not self.hub.options.webhook_include_names:
             payload.pop("object_name", None)
         return payload

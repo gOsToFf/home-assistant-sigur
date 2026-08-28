@@ -161,6 +161,17 @@ async def test_the_payload_withholds_names_by_default(
     assert payload["key_masked"] == "W26 ***23"
 
 
+async def test_the_payload_withholds_object_ids_without_the_option(
+    hass: HomeAssistant, server: FakeSigurServer, aioclient_mock
+) -> None:
+    """Without the personal-data option the delivered id is empty."""
+    aioclient_mock.post(ENDPOINT, status=200)
+    await _setup(hass, server, options=_options())
+    await _push(hass, server, FakeEvent(WHEN, 4, 1, 6, 2, object_name="Иванов"))
+    payload = json.loads(aioclient_mock.mock_calls[0][2])
+    assert payload["object_id"] is None
+
+
 async def test_names_can_be_included_explicitly(
     hass: HomeAssistant, server: FakeSigurServer, aioclient_mock
 ) -> None:

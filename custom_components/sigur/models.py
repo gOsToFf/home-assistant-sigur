@@ -84,8 +84,10 @@ class SigurEvent:
     """A Sigur event, normalized for the Home Assistant event bus.
 
     Personal data is deliberately optional: ``object_name`` is only populated
-    when the user enabled name resolution, and ``key_masked`` never contains a
-    complete credential number.
+    when the user enabled it, ``object_id`` is withheld from published payloads
+    by the same option, and ``key_masked`` never contains a complete credential
+    number. The id is still kept on the object itself, because
+    :attr:`fingerprint` needs it to recognise a replayed event.
     """
 
     server_entry_id: str
@@ -127,8 +129,19 @@ class SigurEvent:
             self.key_masked,
         )
 
-    def as_bus_payload(self, *, include_raw: bool) -> dict[str, Any]:
-        """Render the payload published as the ``sigur_event`` bus event."""
+    def as_bus_payload(
+        self, *, include_raw: bool, include_personal: bool
+    ) -> dict[str, Any]:
+        """Render the payload published as the ``sigur_event`` bus event.
+
+        Args:
+            include_raw: Also carry the raw protocol line, for debugging.
+            include_personal: Carry the access object's id and name. An object
+                id is a stable identifier for a person, so it is withheld by
+                the same option that withholds the name - the entity
+                attributes and the diagnostics gate it the same way.
+
+        """
         payload: dict[str, Any] = {
             "server_entry_id": self.server_entry_id,
             "server_name": self.server_name,
@@ -139,8 +152,8 @@ class SigurEvent:
             "description": self.description,
             "access_point_id": self.access_point_id,
             "access_point_name": self.access_point_name,
-            "object_id": self.object_id,
-            "object_name": self.object_name,
+            "object_id": self.object_id if include_personal else None,
+            "object_name": self.object_name if include_personal else None,
             "direction_code": self.direction_code,
             "direction": self.direction,
             "key_masked": self.key_masked,
