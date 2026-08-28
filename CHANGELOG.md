@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0b1] - 2026-08-28
+
+First beta of the sidebar panel. Betas are only offered to users who turn on
+the per-repository **Pre-release** switch in HACS.
+
+### Added
+
+- A **Sigur** entry in the Home Assistant sidebar. It groups every configured
+  server's access points by zone and shows link state, door position and lock
+  mode on one screen, with a search box and a "problems only" filter for
+  installations with a hundred points.
+- Control straight from a tile - the lock mode and the one-shot entry and exit
+  buttons - shown only while control is enabled for that server; otherwise the
+  tile is read-only and says so.
+- A live event feed beside the tiles, fed from the `sigur_event` bus event.
+- Per-access-point bindings: a Home Assistant camera entity and/or a raw RTSP
+  URL can be attached to an access point and are persisted per config entry.
+  A bound camera's snapshot appears on the tile. The RTSP URL is stored for
+  automations and for a future camera platform; a browser cannot play RTSP
+  directly, so it renders nothing on its own yet.
+- `sigur/panel/data` and `sigur/panel/set_binding` websocket commands. Setting
+  a binding requires an administrator.
+
+### Changed
+
+- The integration now depends on `frontend` and `panel_custom`, which it needs
+  to register the panel.
+
 ## [0.1.0] - 2026-08-28
 
 First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025
@@ -51,5 +79,6 @@ First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025
 - Russian and English translations, with error messages that follow the Home
   Assistant language.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.0b1...HEAD
+[0.2.0b1]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.0b1
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0

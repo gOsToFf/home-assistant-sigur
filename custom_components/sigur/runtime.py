@@ -60,6 +60,7 @@ from .api import (
     create_ssl_context,
 )
 from .api.event_codes import EventCategory
+from .bindings import BindingStore
 from .const import (
     CONF_CA_BUNDLE,
     CONF_CLIENT_CERTIFICATE,
@@ -214,6 +215,7 @@ class SigurRuntimeData:
 
     hub: SigurHub
     coordinator: SigurDataUpdateCoordinator
+    bindings: BindingStore
 
 
 class SigurHub:

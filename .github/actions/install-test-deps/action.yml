@@ -21,3 +21,20 @@ runs:
         uv pip install --system \
           --overrides "${RUNNER_TEMP}/overrides.txt" \
           pytest-homeassistant-custom-component
+
+    - name: Install the frontend package
+      shell: bash
+      # Not a dependency of the homeassistant wheel, but the integration
+      # registers a sidebar panel, so `frontend` and `panel_custom` must be
+      # able to set up. Take the version Home Assistant itself asks for.
+      run: |
+        python - <<'PY' > "${RUNNER_TEMP}/frontend.txt"
+        import json
+        import pathlib
+
+        import homeassistant.components.frontend as frontend
+
+        manifest = pathlib.Path(frontend.__file__).parent / "manifest.json"
+        print(json.loads(manifest.read_text())["requirements"][0])
+        PY
+        uv pip install --system -r "${RUNNER_TEMP}/frontend.txt"

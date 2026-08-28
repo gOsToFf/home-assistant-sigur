@@ -15,6 +15,12 @@ RUN pip install --no-cache-dir uv \
         ruff \
         mypy
 
+# The frontend package is not a dependency of the `homeassistant` wheel, but
+# the integration registers a sidebar panel, so `frontend` and `panel_custom`
+# have to be able to set up. Install exactly the version Home Assistant asks
+# for, so the pair never drifts apart.
+RUN python -c "import json, pathlib; import homeassistant.components.frontend as f;       print(json.loads((pathlib.Path(f.__file__).parent / 'manifest.json').read_text())['requirements'][0])"     > /tmp/frontend.txt     && uv pip install --system -r /tmp/frontend.txt
+
 WORKDIR /workspace
 ENV PYTHONDONTWRITEBYTECODE=1
 CMD ["python", "-m", "pytest", "-q"]
