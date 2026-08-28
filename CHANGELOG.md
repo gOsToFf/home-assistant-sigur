@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0b2] - 2026-08-28
+
+### Added
+
+- A way to actually attach a camera. `0.2.0b1` shipped the storage and the
+  websocket command but no interface, which left the feature unreachable
+  without a browser console.
+  - In the panel, a gear on each access point tile opens an inline editor with
+    a camera entity field, completed from the cameras Home Assistant already
+    has, and an RTSP field. Administrators only.
+  - `sigur.set_access_point_camera` does the same from an automation or in
+    bulk. It is not behind the control option, because recording which camera
+    watches a door opens nothing; calling it with neither field clears the
+    binding.
+
+### Fixed
+
+- The panel failed to load after its cache-busting version changed. The module
+  can be evaluated twice in one page session, and the second
+  `customElements.define` threw, leaving the sidebar entry blank until a hard
+  refresh.
+
 ## [0.2.0b1] - 2026-08-28
 
 First beta of the sidebar panel. Betas are only offered to users who turn on
@@ -79,6 +101,7 @@ First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025
 - Russian and English translations, with error messages that follow the Home
   Assistant language.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.0b1...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.0b2...HEAD
+[0.2.0b2]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.0b2
 [0.2.0b1]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.0b1
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0

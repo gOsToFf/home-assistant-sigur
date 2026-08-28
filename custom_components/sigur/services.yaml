@@ -47,3 +47,21 @@ refresh:
   target:
     entity:
       integration: sigur
+
+set_access_point_camera:
+  target:
+    entity:
+      integration: sigur
+      domain: select
+  fields:
+    camera_entity_id:
+      required: false
+      example: camera.parking_entrance
+      selector:
+        entity:
+          domain: camera
+    rtsp_url:
+      required: false
+      example: rtsp://user:password@10.0.0.5:554/stream
+      selector:
+        text:

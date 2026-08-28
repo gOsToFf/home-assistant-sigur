@@ -91,6 +91,9 @@
     },
     "refresh": {
       "service": "mdi:refresh"
+    },
+    "set_access_point_camera": {
+      "service": "mdi:cctv"
     }
   }
 }
