@@ -1,0 +1,384 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to a Sigur server",
+        "description": "Enable the SKUD integration port in the Sigur server management tool and give the operator the \"OIF protocol access (Integrations)\" right. OIF 1.8 sends the password in clear text inside the protocol, so TLS is strongly recommended.",
+        "data": {
+          "name": "System name",
+          "host": "Host or IP address",
+          "port": "Port",
+          "username": "Operator login",
+          "password": "Operator password",
+          "oif_version": "OIF version",
+          "tls": "Use TLS",
+          "verify_ssl": "Verify the server certificate",
+          "ca_bundle": "Custom CA bundle (path)",
+          "client_certificate": "Client certificate (path)",
+          "client_key": "Client private key (path)",
+          "client_key_password": "Client key passphrase"
+        },
+        "data_description": {
+          "port": "TCP port of the OIF integration listener, 3312 by default.",
+          "verify_ssl": "Turning this off lets anyone on the path read the OIF password. Only do it on a trusted network.",
+          "ca_bundle": "Needed when the Sigur server uses a private certificate authority.",
+          "client_certificate": "Only needed when the Sigur server requires mutual TLS authentication."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sigur credentials rejected",
+        "description": "Enter the operator credentials for {name} again.",
+        "data": {
+          "username": "Operator login",
+          "password": "Operator password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure the Sigur server",
+        "description": "Change the address or the TLS settings. Existing devices and entities are kept.",
+        "data": {
+          "name": "System name",
+          "host": "Host or IP address",
+          "port": "Port",
+          "username": "Operator login",
+          "password": "Operator password",
+          "oif_version": "OIF version",
+          "tls": "Use TLS",
+          "verify_ssl": "Verify the server certificate",
+          "ca_bundle": "Custom CA bundle (path)",
+          "client_certificate": "Client certificate (path)",
+          "client_key": "Client private key (path)",
+          "client_key_password": "Client key passphrase"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the Sigur server. Check the address, the port, and that the SKUD integration port is enabled.",
+      "invalid_auth": "The operator login or password was rejected.",
+      "oif_disabled": "This operator does not have the \"OIF protocol access (Integrations)\" right.",
+      "permission_denied": "The operator is not allowed to use this part of the protocol.",
+      "invalid_certificate": "The TLS certificate could not be validated. Check the CA bundle and the client certificate.",
+      "unsupported_version": "The Sigur server does not support the requested OIF version.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This Sigur server is already configured.",
+      "reauth_successful": "Re-authentication succeeded.",
+      "reconfigure_successful": "The Sigur server was reconfigured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sigur options",
+        "menu_options": {
+          "general": "Polling, control and privacy",
+          "events": "Events and history",
+          "webhook": "Outbound webhook"
+        }
+      },
+      "general": {
+        "title": "Polling, control and privacy",
+        "data": {
+          "scan_interval": "Polling interval",
+          "enable_control": "Allow controlling access points",
+          "enable_personal_data": "Expose personal data in entities and events",
+          "resolve_object_names": "Resolve access object names on demand"
+        },
+        "data_description": {
+          "scan_interval": "How often GETAPINFO is polled. Events update entities immediately, so this is only a safety net.",
+          "enable_control": "Off by default. Turning this on lets Home Assistant lock, unlock and open doors.",
+          "enable_personal_data": "Off by default. Turning this on shows names and object ids in entities, events and diagnostics.",
+          "resolve_object_names": "Fetches a name with GETOBJECTINFO when an event does not carry one. Results are cached briefly."
+        }
+      },
+      "events": {
+        "title": "Events and history",
+        "data": {
+          "event_categories": "Published event categories",
+          "enable_backfill": "Recover missed events after a reconnect",
+          "backfill_hours": "Maximum backfill window",
+          "backfill_on_first_start": "Also backfill on the very first start",
+          "debug_raw_events": "Include the raw protocol message in events"
+        },
+        "data_description": {
+          "event_categories": "Leave empty to publish everything.",
+          "enable_backfill": "Uses GETHISTORY over a bounded window after a reconnect. Duplicates are removed.",
+          "backfill_on_first_start": "Off by default, so a fresh install does not import old history into the recorder.",
+          "debug_raw_events": "Diagnostic only. The raw message can contain personal data."
+        }
+      },
+      "webhook": {
+        "title": "Outbound webhook",
+        "description": "Optional and off by default. A standard Home Assistant automation with rest_command or MQTT is usually the better choice.",
+        "data": {
+          "webhook_enabled": "Forward events to an external endpoint",
+          "webhook_url": "Endpoint URL",
+          "webhook_secret": "HMAC-SHA256 signing secret",
+          "webhook_timeout": "Request timeout",
+          "webhook_categories": "Forwarded event categories",
+          "webhook_include_names": "Include the access object name",
+          "webhook_allow_insecure": "Allow plain HTTP to a private address"
+        },
+        "data_description": {
+          "webhook_secret": "Each delivery is signed over its timestamp, nonce and body.",
+          "webhook_categories": "Leave empty to forward everything that is published.",
+          "webhook_allow_insecure": "Dangerous. Only for an endpoint on a private network."
+        }
+      }
+    },
+    "error": {
+      "webhook_url_required": "An endpoint URL is required when the webhook is enabled.",
+      "webhook_https_required": "The endpoint must use HTTPS, unless it is a private address and insecure delivery is confirmed.",
+      "webhook_secret_required": "A signing secret is required when the webhook is enabled."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connectivity": {
+        "name": "Link"
+      },
+      "door": {
+        "name": "Door"
+      }
+    },
+    "button": {
+      "allow_pass_in": {
+        "name": "Allow entry"
+      },
+      "allow_pass_out": {
+        "name": "Allow exit"
+      },
+      "allow_pass_unknown": {
+        "name": "Allow pass"
+      }
+    },
+    "event": {
+      "access_point_event": {
+        "name": "Last event",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pass_registered": "Pass registered",
+              "access_granted": "Access granted",
+              "access_denied": "Access denied",
+              "break_in": "Break-in",
+              "door_opened": "Door opened",
+              "door_closed": "Door closed",
+              "door_held_open_start": "Door held open",
+              "door_held_open_end": "Door no longer held open",
+              "link_lost": "Link lost",
+              "link_restored": "Link restored",
+              "mode_changed": "Mode changed",
+              "lock_fault": "Lock fault",
+              "power_mains": "Mains power",
+              "power_battery": "Battery power",
+              "tamper": "Enclosure tampered",
+              "fire_alarm": "Fire alarm",
+              "waiting": "Waiting for confirmation",
+              "face": "Face recognition",
+              "temperature": "Temperature",
+              "power_quality": "Supply voltage",
+              "alarm_panel": "Alarm panel",
+              "gate": "Gate",
+              "other": "Other",
+              "unknown": "Unknown"
+            }
+          }
+        }
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "normal": "Normal",
+          "locked": "Locked",
+          "unlocked": "Unlocked"
+        }
+      }
+    },
+    "sensor": {
+      "last_updated": {
+        "name": "Last updated"
+      },
+      "last_error": {
+        "name": "Last error"
+      },
+      "zone_a": {
+        "name": "Entry zone"
+      },
+      "zone_b": {
+        "name": "Exit zone"
+      },
+      "last_pass_time": {
+        "name": "Last pass time"
+      },
+      "last_pass_direction": {
+        "name": "Last pass direction"
+      },
+      "last_event_type": {
+        "name": "Last event type"
+      },
+      "last_pass_object_id": {
+        "name": "Last pass object ID"
+      },
+      "last_pass_object_name": {
+        "name": "Last pass object name"
+      },
+      "connection_state": {
+        "name": "Connection"
+      },
+      "subscribe_mode": {
+        "name": "Subscription mode"
+      },
+      "access_point_count": {
+        "name": "Access points"
+      },
+      "last_event_at": {
+        "name": "Last event"
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "pass_registered": "A pass was registered at {entity_name}",
+      "access_granted": "Access was granted at {entity_name}",
+      "access_denied": "Access was denied at {entity_name}",
+      "break_in": "A break-in was registered at {entity_name}",
+      "door_opened": "{entity_name} was opened",
+      "door_closed": "{entity_name} was closed",
+      "door_held_open_start": "{entity_name} started being held open",
+      "door_held_open_end": "{entity_name} stopped being held open",
+      "link_lost": "The link to {entity_name} was lost",
+      "link_restored": "The link to {entity_name} was restored",
+      "mode_changed": "The mode of {entity_name} changed",
+      "lock_fault": "{entity_name} reported a lock fault",
+      "power_mains": "{entity_name} switched to mains power",
+      "power_battery": "{entity_name} switched to battery power",
+      "tamper": "The enclosure of {entity_name} was tampered with",
+      "fire_alarm": "{entity_name} reported a fire alarm",
+      "waiting": "{entity_name} is waiting for a confirmation",
+      "face": "{entity_name} reported a face recognition result",
+      "temperature": "{entity_name} reported a temperature result",
+      "power_quality": "{entity_name} reported a supply voltage change",
+      "alarm_panel": "{entity_name} reported an alarm panel event",
+      "gate": "The gate at {entity_name} moved",
+      "other": "{entity_name} reported another event",
+      "unknown": "{entity_name} reported an unknown event"
+    }
+  },
+  "services": {
+    "set_access_point_mode": {
+      "name": "Set access point mode",
+      "description": "Sets the lock mode of one or more Sigur access points. Requires control to be enabled in the integration options.",
+      "fields": {
+        "mode": {
+          "name": "Mode",
+          "description": "Normal, locked or unlocked."
+        },
+        "confirm_all_access_points": {
+          "name": "Confirm all access points",
+          "description": "Extra confirmation required when the call targets every access point of a server."
+        }
+      }
+    },
+    "allow_pass": {
+      "name": "Allow a pass",
+      "description": "Authorises a single pass through an access point. Requires control to be enabled in the integration options.",
+      "fields": {
+        "direction": {
+          "name": "Direction",
+          "description": "In, out, or unknown."
+        },
+        "object_id": {
+          "name": "Access object ID",
+          "description": "Numeric ID of the employee, guest or car. Leave empty for an anonymous pass."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Refresh",
+      "description": "Polls the targeted Sigur servers immediately."
+    }
+  },
+  "selector": {
+    "event_category": {
+      "options": {
+        "pass_registered": "Pass registered",
+        "access_granted": "Access granted",
+        "access_denied": "Access denied",
+        "break_in": "Break-in",
+        "door_opened": "Door opened",
+        "door_closed": "Door closed",
+        "door_held_open_start": "Door held open (start)",
+        "door_held_open_end": "Door held open (end)",
+        "link_lost": "Link lost",
+        "link_restored": "Link restored",
+        "mode_changed": "Mode changed",
+        "lock_fault": "Lock fault",
+        "power_mains": "Mains power",
+        "power_battery": "Battery power",
+        "tamper": "Enclosure tampered",
+        "fire_alarm": "Fire alarm",
+        "waiting": "Waiting for confirmation",
+        "face": "Face recognition",
+        "temperature": "Temperature",
+        "power_quality": "Supply voltage",
+        "alarm_panel": "Alarm panel",
+        "gate": "Gate",
+        "other": "Other",
+        "unknown": "Unknown"
+      }
+    },
+    "access_point_mode": {
+      "options": {
+        "normal": "Normal",
+        "locked": "Locked",
+        "unlocked": "Unlocked"
+      }
+    },
+    "pass_direction": {
+      "options": {
+        "in": "In",
+        "out": "Out",
+        "unknown": "Unknown"
+      }
+    }
+  },
+  "issues": {
+    "oif_access_disabled": {
+      "title": "Sigur: OIF access is disabled for this operator",
+      "description": "The operator configured for {name} does not have the \"OIF protocol access (Integrations)\" right. Grant it in the Sigur operator settings, then reload the integration."
+    },
+    "invalid_certificate": {
+      "title": "Sigur: the TLS certificate could not be validated",
+      "description": "The certificate presented by {name} was rejected. Check that it has not expired and that the configured CA bundle matches the Sigur certificate store."
+    },
+    "unsupported_version": {
+      "title": "Sigur: unsupported OIF version",
+      "description": "The server {name} rejected the configured OIF version. Reconfigure the integration with a version this server supports."
+    },
+    "server_unavailable": {
+      "title": "Sigur: the server has been unreachable",
+      "description": "Home Assistant has not been able to reach {name} for a while. Check the server, the network path and that the SKUD integration port is still enabled."
+    }
+  },
+  "exceptions": {
+    "control_disabled": {
+      "message": "Control of the Sigur system {name} is disabled. Turn on \"Allow controlling access points\" in the integration options first."
+    },
+    "unknown_access_point": {
+      "message": "Unknown Sigur access point: {ap_id}."
+    },
+    "unknown_mode": {
+      "message": "Unknown Sigur access point mode: {mode}."
+    },
+    "set_mode_failed": {
+      "message": "Sigur refused to set the mode of access point {ap_id}: {error}"
+    },
+    "allow_pass_failed": {
+      "message": "Sigur refused a pass through access point {ap_id}: {error}"
+    }
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "connectivity": {
+        "default": "mdi:lan-connect",
+        "state": {
+          "off": "mdi:lan-disconnect"
+        }
+      },
+      "door": {
+        "default": "mdi:door-closed",
+        "state": {
+          "on": "mdi:door-open"
+        }
+      }
+    },
+    "button": {
+      "allow_pass_in": {
+        "default": "mdi:location-enter"
+      },
+      "allow_pass_out": {
+        "default": "mdi:location-exit"
+      },
+      "allow_pass_unknown": {
+        "default": "mdi:door-open"
+      }
+    },
+    "event": {
+      "access_point_event": {
+        "default": "mdi:badge-account-horizontal-outline"
+      }
+    },
+    "select": {
+      "mode": {
+        "default": "mdi:door-closed-lock",
+        "state": {
+          "normal": "mdi:door-closed",
+          "locked": "mdi:door-closed-lock",
+          "unlocked": "mdi:door-open"
+        }
+      }
+    },
+    "sensor": {
+      "last_updated": {
+        "default": "mdi:update"
+      },
+      "last_error": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "zone_a": {
+        "default": "mdi:import"
+      },
+      "zone_b": {
+        "default": "mdi:export"
+      },
+      "last_pass_time": {
+        "default": "mdi:clock-outline"
+      },
+      "last_pass_direction": {
+        "default": "mdi:swap-horizontal"
+      },
+      "last_event_type": {
+        "default": "mdi:format-list-bulleted-type"
+      },
+      "last_pass_object_id": {
+        "default": "mdi:identifier"
+      },
+      "last_pass_object_name": {
+        "default": "mdi:account"
+      },
+      "connection_state": {
+        "default": "mdi:server-network"
+      },
+      "subscribe_mode": {
+        "default": "mdi:rss"
+      },
+      "access_point_count": {
+        "default": "mdi:door"
+      },
+      "last_event_at": {
+        "default": "mdi:clock-alert-outline"
+      }
+    }
+  },
+  "services": {
+    "set_access_point_mode": {
+      "service": "mdi:door-closed-lock"
+    },
+    "allow_pass": {
+      "service": "mdi:door-open"
+    },
+    "refresh": {
+      "service": "mdi:refresh"
+    }
+  }
+}
