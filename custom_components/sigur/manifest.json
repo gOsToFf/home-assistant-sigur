@@ -1,13 +1,23 @@
 {
   "domain": "sigur",
   "name": "Sigur (OIF)",
-  "codeowners": ["@gOsToFf"],
+  "codeowners": [
+    "@gOsToFf"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/gOsToFf/home-assistant-sigur",
   "integration_type": "hub",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/gOsToFf/home-assistant-sigur/issues",
-  "loggers": ["custom_components.sigur"],
+  "loggers": [
+    "custom_components.sigur"
+  ],
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0b1"
 }

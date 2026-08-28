@@ -80,6 +80,20 @@ ATTR_CONFIRM_ALL: Final = "confirm_all_access_points"
 STORAGE_VERSION: Final = 1
 STORAGE_KEY: Final = f"{DOMAIN}.state"
 
+#: Per-access-point bindings (camera entity, RTSP URL) live in their own store,
+#: because an installation with a hundred points would make an options form
+#: unusable and these values change independently of the connection settings.
+BINDINGS_STORAGE_VERSION: Final = 1
+BINDINGS_STORAGE_KEY: Final = f"{DOMAIN}.bindings"
+
+# --- Sidebar panel ----------------------------------------------------------
+
+PANEL_URL_PATH: Final = "sigur"
+PANEL_TITLE: Final = "Sigur"
+PANEL_ICON: Final = "mdi:door-sliding"
+#: Bumped whenever the panel module changes, to bust the browser cache.
+PANEL_VERSION: Final = "0.2.0"
+
 # --- Repairs ----------------------------------------------------------------
 
 ISSUE_OIF_DISABLED: Final = "oif_access_disabled"

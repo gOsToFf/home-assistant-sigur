@@ -13,10 +13,13 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
+from .bindings import BindingStore
 from .const import DOMAIN
 from .coordinator import SigurDataUpdateCoordinator
+from .panel import async_register_panel, async_unregister_panel
 from .runtime import SigurConfigEntry, SigurHub, SigurRuntimeData
 from .services import async_setup_services
+from .websocket_api import async_setup_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,8 +37,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: SigurConfigEntry) -> boo
     hub = SigurHub(hass, entry)
     await hub.async_setup()
 
+    bindings = BindingStore(hass, entry.entry_id)
+    await bindings.async_load()
+
     coordinator = SigurDataUpdateCoordinator(hass, entry, hub)
-    entry.runtime_data = SigurRuntimeData(hub=hub, coordinator=coordinator)
+    entry.runtime_data = SigurRuntimeData(
+        hub=hub, coordinator=coordinator, bindings=bindings
+    )
 
     if hub.options.webhook_enabled:
         from .webhook import WebhookForwarder
@@ -51,6 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: SigurConfigEntry) -> boo
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     async_setup_services(hass)
+    async_setup_websocket_api(hass)
+    await async_register_panel(hass)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     return True
 
@@ -60,6 +70,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: SigurConfigEntry) -> bo
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         await entry.runtime_data.hub.async_shutdown()
+        async_unregister_panel(hass)
     return unloaded
 
 
