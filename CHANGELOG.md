@@ -44,6 +44,24 @@ All notable changes to this project are documented here. The format follows
   directionless button survives either way, for doors with a single reader.
   The mode is exposed as a `direction_mode` attribute for automations.
 - `sigur/panel/data` and `sigur/panel/set_binding` websocket commands.
+- A choice of which access points become devices at all. An **Access points**
+  step in the options lists everything the server reports, including points
+  already excluded, and an unselected point gets no device, no entities and no
+  `GETAPINFO` - on a hundred point system that is the difference between a
+  hundred commands per scan interval and a handful. Selecting all of them
+  stores no filter, so "all" keeps meaning "follow the server" and a point
+  added in Sigur next month still appears by itself. Deselecting a point
+  deletes its device and everything on it; a point that merely dropped out of
+  `GETAPLIST` is left alone, because that is what a temporary discovery
+  failure looks like.
+- An optional `cover` per pass direction, for voice assistants. A one-shot pass
+  is a `button`, but Alice, Google and Siri all reach an access point through
+  an *openable* device, and in Home Assistant that is a `cover`; opening one
+  sends exactly the `ALLOWPASS` its button sends. Off by default - most
+  installations do not need two controls for one action - and it follows the
+  control option for the same reason the buttons do. The state is the real
+  door position reported by OIF rather than a guess from the last command, and
+  only opening is offered, because a Sigur access point closes on its own.
 
 ### Changed
 

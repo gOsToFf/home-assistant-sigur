@@ -40,6 +40,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .api import (
+    AccessPointInfo,
     ApMode,
     ApOpenState,
     ApState,
@@ -80,11 +81,13 @@ from .const import (
     MIN_SCAN_INTERVAL,
     OBJECT_NAME_CACHE_SIZE,
     OBJECT_NAME_TTL,
+    OPT_ACCESS_POINTS,
     OPT_BACKFILL_HOURS,
     OPT_BACKFILL_ON_FIRST_START,
     OPT_DEBUG_RAW_EVENTS,
     OPT_ENABLE_BACKFILL,
     OPT_ENABLE_CONTROL,
+    OPT_ENABLE_PASS_COVERS,
     OPT_ENABLE_PERSONAL_DATA,
     OPT_EVENT_CATEGORIES,
     OPT_RESOLVE_OBJECT_NAMES,
@@ -120,6 +123,7 @@ class SigurOptions:
 
     scan_interval: int = DEFAULT_SCAN_INTERVAL
     enable_control: bool = False
+    enable_pass_covers: bool = False
     enable_personal_data: bool = False
     resolve_object_names: bool = False
     enable_backfill: bool = False
@@ -136,6 +140,8 @@ class SigurOptions:
     webhook_categories: tuple[str, ...] = ()
     webhook_allow_insecure: bool = False
     webhook_include_names: bool = False
+    access_points: frozenset[int] = frozenset()
+    """Access points to expose; empty means every point the server reports."""
 
     @classmethod
     def from_entry(cls, entry: ConfigEntry) -> SigurOptions:
@@ -147,6 +153,7 @@ class SigurOptions:
                 int(options.get(OPT_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
             ),
             enable_control=bool(options.get(OPT_ENABLE_CONTROL, False)),
+            enable_pass_covers=bool(options.get(OPT_ENABLE_PASS_COVERS, False)),
             enable_personal_data=bool(options.get(OPT_ENABLE_PERSONAL_DATA, False)),
             resolve_object_names=bool(options.get(OPT_RESOLVE_OBJECT_NAMES, False)),
             enable_backfill=bool(options.get(OPT_ENABLE_BACKFILL, False)),
@@ -168,11 +175,33 @@ class SigurOptions:
             webhook_categories=tuple(options.get(OPT_WEBHOOK_CATEGORIES, ()) or ()),
             webhook_allow_insecure=bool(options.get(OPT_WEBHOOK_ALLOW_INSECURE, False)),
             webhook_include_names=bool(options.get(OPT_WEBHOOK_INCLUDE_NAMES, False)),
+            access_points=_parse_access_points(options.get(OPT_ACCESS_POINTS)),
         )
 
     def publishes(self, category: EventCategory) -> bool:
         """Whether events of ``category`` go onto the Home Assistant bus."""
         return not self.event_categories or category.value in self.event_categories
+
+    def includes(self, ap_id: int) -> bool:
+        """Whether ``ap_id`` is one of the access points to expose."""
+        return not self.access_points or ap_id in self.access_points
+
+
+def _parse_access_points(raw: object) -> frozenset[int]:
+    """Read the selected access point ids, ignoring anything unparseable.
+
+    The selector hands back strings, and an id that no longer exists on the
+    server is harmless here - it simply never matches.
+    """
+    if not raw:
+        return frozenset()
+    selected: set[int] = set()
+    for value in raw:  # type: ignore[union-attr]
+        try:
+            selected.add(int(value))
+        except (TypeError, ValueError):
+            _LOGGER.warning("Ignoring unparseable access point selection %r", value)
+    return frozenset(selected)
 
 
 def build_transport_settings(entry: ConfigEntry) -> TransportSettings:
@@ -232,6 +261,12 @@ class SigurHub:
 
         self.zones: dict[int, ZoneInfo] = {}
         self.access_points: dict[int, AccessPointState] = {}
+        self.discovered_access_points: tuple[int, ...] = ()
+        """Every id ``GETAPLIST`` reported, before the user's filter.
+
+        :attr:`access_points` holds only the selected ones; this is what tells
+        an excluded point apart from one the server has stopped reporting.
+        """
         self.subscribe_mode: SubscribeMode | None = None
         self.last_event_at: datetime | None = None
         self.unavailable_since: datetime | None = None
@@ -384,7 +419,12 @@ class SigurHub:
 
         """
         ap_ids = await self.api.get_access_point_ids()
-        added = [ap_id for ap_id in ap_ids if ap_id not in self.access_points]
+        self.discovered_access_points = tuple(ap_ids)
+        # Points the user did not select are never polled at all. On a hundred
+        # point installation that is the difference between one GETAPINFO per
+        # point every scan interval and a handful.
+        selected = [ap_id for ap_id in ap_ids if self.options.includes(ap_id)]
+        added = [ap_id for ap_id in selected if ap_id not in self.access_points]
         for ap_id in added:
             self.access_points[ap_id] = AccessPointState(id=ap_id)
         # Access points that disappeared are marked unavailable rather than
@@ -394,6 +434,34 @@ class SigurHub:
                 state.available = False
                 state.last_error = "not returned by GETAPLIST"
         return added
+
+    async def async_list_all_access_points(self) -> list[AccessPointInfo]:
+        """Fetch every access point the server has, filter or no filter.
+
+        The options form needs names for the points it offers, including the
+        ones currently excluded and therefore never polled. This is the only
+        caller that pays for a full ``GETAPINFO`` sweep, and it does so once,
+        when the user opens the form.
+
+        Points that fail individually are skipped rather than failing the
+        whole listing, so one broken controller cannot make the form
+        unreachable.
+        """
+        await self.async_ensure_command_connection()
+        ap_ids = await self.api.get_access_point_ids()
+        self.discovered_access_points = tuple(ap_ids)
+        points: list[AccessPointInfo] = []
+        for ap_id in ap_ids:
+            try:
+                points.append(await self.api.get_access_point(ap_id))
+            except SigurError as err:
+                _LOGGER.debug(
+                    "Sigur (%s): GETAPINFO %s failed while listing: %s",
+                    self.server_name,
+                    ap_id,
+                    err,
+                )
+        return points
 
     @callback
     def async_add_new_access_point_listener(

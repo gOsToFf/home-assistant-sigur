@@ -73,6 +73,7 @@
         "title": "Sigur options",
         "menu_options": {
           "general": "Polling, control and privacy",
+          "access_points": "Access points",
           "events": "Events and history",
           "webhook": "Outbound webhook"
         }
@@ -82,14 +83,26 @@
         "data": {
           "scan_interval": "Polling interval",
           "enable_control": "Allow controlling access points",
+          "enable_pass_covers": "Also expose passes as openable covers",
           "enable_personal_data": "Expose personal data in entities and events",
           "resolve_object_names": "Resolve access object names on demand"
         },
         "data_description": {
           "scan_interval": "How often GETAPINFO is polled. Events update entities immediately, so this is only a safety net.",
           "enable_control": "Off by default. Turning this on lets Home Assistant lock, unlock and open doors.",
+          "enable_pass_covers": "Off by default. Adds a cover next to each pass button, so voice assistants that only understand \"open\" - Alice, Google, Siri - can authorise a single pass. Needs control to be enabled. The cover reports the real door position and only supports opening.",
           "enable_personal_data": "Off by default. Turning this on shows names and object ids in entities, events and diagnostics.",
           "resolve_object_names": "Fetches a name with GETOBJECTINFO when an event does not carry one. Results are cached briefly."
+        }
+      },
+      "access_points": {
+        "title": "Access points",
+        "description": "Choose which of the {count} access points this server reports become devices in Home Assistant. Unselected points get no entities and are not polled. Selecting all of them means \"follow the server\", so a point added in Sigur later appears on its own.",
+        "data": {
+          "access_points": "Access points to expose"
+        },
+        "data_description": {
+          "access_points": "Deselecting a point deletes its device and every entity on it."
         }
       },
       "events": {
@@ -130,7 +143,12 @@
     "error": {
       "webhook_url_required": "An endpoint URL is required when the webhook is enabled.",
       "webhook_https_required": "The endpoint must use HTTPS, unless it is a private address and insecure delivery is confirmed.",
-      "webhook_secret_required": "A signing secret is required when the webhook is enabled."
+      "webhook_secret_required": "A signing secret is required when the webhook is enabled.",
+      "no_access_points": "Select at least one access point."
+    },
+    "abort": {
+      "entry_not_loaded": "The Sigur server has to be connected before its access points can be listed.",
+      "cannot_list_access_points": "Could not read the access point list from the Sigur server. Check the log."
     }
   },
   "entity": {
@@ -151,6 +169,17 @@
       },
       "allow_pass_unknown": {
         "name": "Allow pass"
+      }
+    },
+    "cover": {
+      "pass_cover_in": {
+        "name": "Entry"
+      },
+      "pass_cover_out": {
+        "name": "Exit"
+      },
+      "pass_cover_unknown": {
+        "name": "Pass"
       }
     },
     "event": {

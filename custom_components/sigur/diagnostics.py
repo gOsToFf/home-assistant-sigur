@@ -98,6 +98,9 @@ async def async_get_config_entry_diagnostics(
             "subscribe_mode": hub.subscribe_mode.value if hub.subscribe_mode else None,
             "zone_count": len(hub.zones),
             "access_point_count": len(hub.access_points),
+            # Both numbers, because "only three access points" reads very
+            # differently once you know the server reports forty-seven.
+            "discovered_access_point_count": len(hub.discovered_access_points),
             "last_event_at": (
                 hub.last_event_at.isoformat() if hub.last_event_at else None
             ),

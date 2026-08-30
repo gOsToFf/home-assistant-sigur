@@ -26,6 +26,7 @@ import voluptuous as vol
 from .api import (
     DEFAULT_OIF_VERSION,
     DEFAULT_PORT,
+    AccessPointInfo,
     Credentials,
     OifConnection,
     SigurApi,
@@ -58,11 +59,13 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_BACKFILL_HOURS,
     MIN_SCAN_INTERVAL,
+    OPT_ACCESS_POINTS,
     OPT_BACKFILL_HOURS,
     OPT_BACKFILL_ON_FIRST_START,
     OPT_DEBUG_RAW_EVENTS,
     OPT_ENABLE_BACKFILL,
     OPT_ENABLE_CONTROL,
+    OPT_ENABLE_PASS_COVERS,
     OPT_ENABLE_PERSONAL_DATA,
     OPT_EVENT_CATEGORIES,
     OPT_RESOLVE_OBJECT_NAMES,
@@ -307,7 +310,8 @@ class SigurOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the options menu."""
         return self.async_show_menu(
-            step_id="init", menu_options=["general", "events", "webhook"]
+            step_id="init",
+            menu_options=["general", "access_points", "events", "webhook"],
         )
 
     async def async_step_general(
@@ -339,6 +343,10 @@ class SigurOptionsFlow(OptionsFlow):
                     default=options.get(OPT_ENABLE_CONTROL, False),
                 ): bool,
                 vol.Required(
+                    OPT_ENABLE_PASS_COVERS,
+                    default=options.get(OPT_ENABLE_PASS_COVERS, False),
+                ): bool,
+                vol.Required(
                     OPT_ENABLE_PERSONAL_DATA,
                     default=options.get(OPT_ENABLE_PERSONAL_DATA, False),
                 ): bool,
@@ -349,6 +357,75 @@ class SigurOptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(step_id="general", data_schema=schema)
+
+    async def async_step_access_points(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose which access points get devices and entities.
+
+        A Sigur system with a hundred doors would otherwise put a hundred
+        devices into Home Assistant whether or not the user cares about them,
+        and poll every one of them forever.
+        """
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        if runtime is None:
+            return self.async_abort(reason="entry_not_loaded")
+
+        try:
+            points = await runtime.hub.async_list_all_access_points()
+        except SigurError:
+            _LOGGER.exception("Could not list the Sigur access points")
+            return self.async_abort(reason="cannot_list_access_points")
+
+        available = {point.id for point in points}
+        if user_input is not None:
+            chosen = {int(value) for value in user_input.get(OPT_ACCESS_POINTS, [])}
+            if not chosen:
+                return self._access_points_form(
+                    points, user_input, {OPT_ACCESS_POINTS: "no_access_points"}
+                )
+            # Picking every point means "follow the server", so an access point
+            # added in Sigur next month still shows up on its own. Storing the
+            # full list instead would silently freeze the set as it is today.
+            stored = [] if chosen == available else sorted(str(i) for i in chosen)
+            return self._save({OPT_ACCESS_POINTS: stored})
+
+        selected = self.config_entry.options.get(OPT_ACCESS_POINTS) or [
+            str(ap_id) for ap_id in sorted(available)
+        ]
+        return self._access_points_form(points, {OPT_ACCESS_POINTS: selected}, {})
+
+    @callback
+    def _access_points_form(
+        self,
+        points: list[AccessPointInfo],
+        values: Mapping[str, Any],
+        errors: dict[str, str],
+    ) -> ConfigFlowResult:
+        """Render the access point picker over ``points``."""
+        options = [
+            selector.SelectOptionDict(
+                value=str(point.id), label=f"{point.name} (#{point.id})"
+            )
+            for point in sorted(points, key=lambda point: (point.name, point.id))
+        ]
+        schema = vol.Schema(
+            {
+                vol.Required(OPT_ACCESS_POINTS): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="access_points",
+            data_schema=self.add_suggested_values_to_schema(schema, values),
+            errors=errors,
+            description_placeholders={"count": str(len(points))},
+        )
 
     async def async_step_events(
         self, user_input: dict[str, Any] | None = None
