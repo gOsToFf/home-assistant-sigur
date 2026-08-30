@@ -22,7 +22,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 import voluptuous as vol
 
+from .bindings import DirectionMode
 from .const import DOMAIN
+from .registry_watch import async_notify_panel
 from .runtime import SigurConfigEntry
 
 #: Suffixes of the per-access-point entities the panel drives, mapped onto the
@@ -119,6 +121,7 @@ async def ws_panel_data(
                     "entities": entities.get(ap_id, {}),
                     "camera_entity_id": binding.camera_entity_id,
                     "rtsp_url": binding.rtsp_url,
+                    "direction_mode": binding.direction_mode.value,
                 }
             )
 
@@ -152,6 +155,7 @@ async def ws_panel_data(
         vol.Required("access_point_id"): int,
         vol.Optional("camera_entity_id"): vol.Any(str, None),
         vol.Optional("rtsp_url"): vol.Any(str, None),
+        vol.Optional("direction_mode"): vol.In([mode.value for mode in DirectionMode]),
     }
 )
 @require_admin
@@ -179,9 +183,17 @@ async def ws_set_binding(
         connection.send_error(msg["id"], "not_found", f"Unknown access point {ap_id}")
         return
 
+    previous = runtime.bindings.get(ap_id).direction_mode
     binding = await runtime.bindings.async_set(
         ap_id,
         camera_entity_id=msg.get("camera_entity_id"),
         rtsp_url=msg.get("rtsp_url"),
+        direction_mode=msg.get("direction_mode"),
     )
+    async_notify_panel(hass, entry.entry_id)
     connection.send_result(msg["id"], binding.as_dict())
+
+    if binding.direction_mode is not previous:
+        # Which pass buttons exist is decided when the platform is set up, so
+        # the entry has to be reloaded for the change to take effect.
+        hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))

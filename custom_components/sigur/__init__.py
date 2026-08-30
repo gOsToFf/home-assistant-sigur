@@ -17,6 +17,7 @@ from .bindings import BindingStore
 from .const import DOMAIN
 from .coordinator import SigurDataUpdateCoordinator
 from .panel import async_register_panel, async_unregister_panel
+from .registry_watch import async_watch_entity_registry
 from .runtime import SigurConfigEntry, SigurHub, SigurRuntimeData
 from .services import async_setup_services
 from .websocket_api import async_setup_websocket_api
@@ -61,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SigurConfigEntry) -> boo
     async_setup_services(hass)
     async_setup_websocket_api(hass)
     await async_register_panel(hass)
+    entry.async_on_unload(async_watch_entity_registry(hass, entry.entry_id))
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     return True
 

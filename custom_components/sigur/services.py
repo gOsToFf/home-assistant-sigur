@@ -20,10 +20,12 @@ from homeassistant.helpers import entity_registry as er
 import voluptuous as vol
 
 from .api import ANONYMOUS, ApMode, Direction, SigurError
+from .bindings import DirectionMode
 from .const import (
     ATTR_CAMERA_ENTITY_ID,
     ATTR_CONFIRM_ALL,
     ATTR_DIRECTION,
+    ATTR_DIRECTION_MODE,
     ATTR_MODE,
     ATTR_OBJECT_ID,
     ATTR_RTSP_URL,
@@ -33,6 +35,7 @@ from .const import (
     SERVICE_SET_ACCESS_POINT_MODE,
     SERVICE_SET_CAMERA,
 )
+from .registry_watch import async_notify_panel
 from .runtime import SigurConfigEntry, SigurHub, SigurRuntimeData
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +74,7 @@ SET_CAMERA_SCHEMA = vol.Schema(
             None, vol.All(cv.string, cv.entity_domain("camera"))
         ),
         vol.Optional(ATTR_RTSP_URL): vol.Any(None, cv.string),
+        vol.Optional(ATTR_DIRECTION_MODE): vol.In([m.value for m in DirectionMode]),
     }
 )
 
@@ -206,13 +210,23 @@ async def _async_set_camera(call: ServiceCall) -> None:
     """
     camera = call.data.get(ATTR_CAMERA_ENTITY_ID)
     rtsp = call.data.get(ATTR_RTSP_URL)
+    direction_mode = call.data.get(ATTR_DIRECTION_MODE)
     for entry, ap_ids in _resolve_targets(call.hass, call).items():
         runtime = getattr(entry, "runtime_data", None)
         if runtime is None:
             continue
         for ap_id in sorted(ap_ids):
             await runtime.bindings.async_set(
-                ap_id, camera_entity_id=camera, rtsp_url=rtsp
+                ap_id,
+                camera_entity_id=camera,
+                rtsp_url=rtsp,
+                direction_mode=direction_mode,
+            )
+        async_notify_panel(call.hass, entry.entry_id)
+        if direction_mode is not None:
+            # Which pass buttons exist is decided at platform setup.
+            call.hass.async_create_task(
+                call.hass.config_entries.async_reload(entry.entry_id)
             )
 
 

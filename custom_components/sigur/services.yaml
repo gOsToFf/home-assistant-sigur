@@ -65,3 +65,13 @@ set_access_point_camera:
       example: rtsp://user:password@10.0.0.5:554/stream
       selector:
         text:
+    direction_mode:
+      required: false
+      default: both
+      selector:
+        select:
+          options:
+            - both
+            - in
+            - out
+          translation_key: pass_direction_mode
