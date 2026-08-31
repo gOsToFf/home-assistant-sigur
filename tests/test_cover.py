@@ -90,8 +90,8 @@ async def test_one_cover_per_access_point(
 async def test_the_cover_carries_the_access_point_name(hass: HomeAssistant) -> None:
     """What the assistant repeats back has to be the access point, nothing more.
 
-    As the device's primary entity the cover takes its name, so a voice command
-    is "open Въезд 1" rather than "open Въезд 1 pass".
+    The cover takes the access point's name, so a voice command is
+    "open Въезд 1" rather than "open Въезд 1 pass".
     """
     fake = FakeSigurServer(access_points=[FakeAccessPoint(1, "Въезд 1")])
     await fake.start()
@@ -100,6 +100,26 @@ async def test_the_cover_carries_the_access_point_name(hass: HomeAssistant) -> N
         state = hass.states.get("cover.vezd_1")
         assert state is not None
         assert state.attributes["friendly_name"] == "Въезд 1"
+    finally:
+        await fake.stop()
+
+
+async def test_the_name_is_stored_in_the_registry_too(hass: HomeAssistant) -> None:
+    """A nameless registry entry is what makes Alice say "Открывающее устройство".
+
+    Composing the displayed name from the device leaves the entity's own name
+    empty, and a bridge that reads the registry rather than the state then has
+    nothing to send. Both readings have to see the access point's name.
+    """
+    fake = FakeSigurServer(access_points=[FakeAccessPoint(1, "Въезд 1")])
+    await fake.start()
+    try:
+        entry = await _setup(hass, fake, options=COVERS_ON)
+        registry = er.async_get(hass)
+        item = registry.async_get("cover.vezd_1")
+        assert item is not None
+        assert item.unique_id == f"{entry.entry_id}_1_pass_cover"
+        assert item.original_name == "Въезд 1"
     finally:
         await fake.stop()
 
