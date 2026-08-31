@@ -8,7 +8,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 import pytest
 
-from custom_components.sigur.const import OPT_ENABLE_CONTROL
+from custom_components.sigur.const import DOMAIN, OPT_ENABLE_CONTROL
 
 from .conftest import requires_home_assistant
 from .fake_oif_server import FakeAccessPoint, FakeSigurServer
@@ -168,3 +168,110 @@ async def test_control_disabled_error_is_translatable(
     assert excinfo.value.translation_domain == "sigur"
     assert excinfo.value.translation_key == "control_disabled"
     assert excinfo.value.translation_placeholders == {"name": "Sigur - Офис"}
+
+
+async def test_a_one_way_in_access_point_offers_only_entry(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """A point declared entry-only must not offer an exit button.
+
+    OIF never reports directionality, so this is the user's declaration; the
+    exit button would simply always be wrong.
+    """
+    entry = await _setup(hass, server, options=CONTROL_ON)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "sigur/panel/set_binding",
+            "entry_id": entry.entry_id,
+            "access_point_id": 1,
+            "direction_mode": "in",
+        }
+    )
+    assert (await client.receive_json())["success"]
+    await hass.async_block_till_done()
+
+    assert hass.states.get("button.glavnyi_vkhod_allow_entry") is not None
+    assert hass.states.get("button.glavnyi_vkhod_allow_exit") is None
+    # The other access point is untouched and still bidirectional.
+    assert hass.states.get("button.turniket_allow_exit") is not None
+    # The withdrawn button leaves no orphan behind in the registry.
+    registry = er.async_get(hass)
+    assert (
+        registry.async_get_entity_id(
+            "button", DOMAIN, f"{entry.entry_id}_1_allow_pass_out"
+        )
+        is None
+    )
+
+
+async def test_a_one_way_out_access_point_offers_only_exit(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """The mirror case."""
+    entry = await _setup(hass, server, options=CONTROL_ON)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "sigur/panel/set_binding",
+            "entry_id": entry.entry_id,
+            "access_point_id": 2,
+            "direction_mode": "out",
+        }
+    )
+    assert (await client.receive_json())["success"]
+    await hass.async_block_till_done()
+
+    assert hass.states.get("button.turniket_allow_exit") is not None
+    assert hass.states.get("button.turniket_allow_entry") is None
+
+
+async def test_the_directionless_button_survives_a_one_way_point(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """A door with one reader still needs its directionless button."""
+    entry = await _setup(hass, server, options=CONTROL_ON)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "sigur/panel/set_binding",
+            "entry_id": entry.entry_id,
+            "access_point_id": 1,
+            "direction_mode": "in",
+        }
+    )
+    assert (await client.receive_json())["success"]
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    assert (
+        registry.async_get_entity_id(
+            "button", DOMAIN, f"{entry.entry_id}_1_allow_pass_unknown"
+        )
+        is not None
+    )
+
+
+async def test_the_direction_mode_is_visible_on_entities(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """Automations can read the declared mode without the panel."""
+    entry = await _setup(hass, server, options=CONTROL_ON)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "sigur/panel/set_binding",
+            "entry_id": entry.entry_id,
+            "access_point_id": 1,
+            "direction_mode": "out",
+        }
+    )
+    assert (await client.receive_json())["success"]
+    await hass.async_block_till_done()
+
+    state = hass.states.get("select.glavnyi_vkhod_mode")
+    assert state is not None
+    assert state.attributes["direction_mode"] == "out"
+    assert (
+        hass.states.get("select.turniket_mode").attributes["direction_mode"] == "both"
+    )

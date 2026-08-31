@@ -12,6 +12,19 @@
  */
 
 const EVENT_TYPE = "sigur_event";
+/** Fired by the integration when the structure this panel caches changed. */
+const DATA_CHANGED_EVENT = "sigur_panel_data_changed";
+/** Coalesce bursts of registry changes into one reload. */
+const RELOAD_DEBOUNCE_MS = 400;
+/**
+ * How often a visible tile refetches its camera frame.
+ *
+ * Home Assistant only rotates the token inside `entity_picture` every five
+ * minutes, so without this the picture on a tile can be that stale. Only tiles
+ * actually on screen are refreshed: an installation with a hundred access
+ * points would otherwise pull a hundred JPEGs from cameras on every tick.
+ */
+const CAMERA_REFRESH_MS = 30000;
 /** How many events the feed keeps. Older ones live in the recorder. */
 const FEED_LIMIT = 60;
 
@@ -60,6 +73,20 @@ const ALARM_CATEGORIES = new Set([
 
 const DIRECTION_LABELS = { in: "вход", out: "выход", unknown: "", none: "" };
 
+/**
+ * How a point may be passed. OIF does not report this - it knows only which
+ * zone lies on each side - so it is declared by the user, and it decides which
+ * one-shot pass buttons a tile offers.
+ */
+const DIRECTION_MODES = {
+  both: "В обе стороны",
+  in: "Только вход",
+  out: "Только выход",
+};
+
+const offersDirection = (mode, direction) =>
+  !mode || mode === "both" || mode === direction;
+
 const escapeHtml = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -97,6 +124,11 @@ class SigurPanel extends HTMLElement {
     this._onlyProblems = false;
     this._isAdmin = false;
     this._editing = null;
+    this._subscriptions = [];
+    this._reloadTimer = null;
+    this._cameraTimer = null;
+    this._visible = new Set();
+    this._observer = null;
   }
 
   /** Home Assistant assigns this on every state change. */
@@ -128,10 +160,13 @@ class SigurPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
-    if (this._unsubscribe) {
-      this._unsubscribe.then((off) => off()).catch(() => undefined);
-      this._unsubscribe = null;
+    clearTimeout(this._reloadTimer);
+    clearInterval(this._cameraTimer);
+    this._observer?.disconnect();
+    for (const pending of this._subscriptions) {
+      pending.then((off) => off()).catch(() => undefined);
     }
+    this._subscriptions = [];
   }
 
   async _load() {
@@ -147,10 +182,75 @@ class SigurPanel extends HTMLElement {
   }
 
   _subscribe() {
-    this._unsubscribe = this._hass.connection.subscribeEvents((event) => {
-      this._feed = [event.data, ...this._feed].slice(0, FEED_LIMIT);
-      this._paintFeed();
-    }, EVENT_TYPE);
+    this._subscriptions.push(
+      this._hass.connection.subscribeEvents((event) => {
+        this._feed = [event.data, ...this._feed].slice(0, FEED_LIMIT);
+        this._paintFeed();
+        // Something happened at this door, which is exactly when its camera
+        // is worth looking at. Refetch that frame now rather than waiting.
+        const { server_entry_id: entry, access_point_id: ap } = event.data;
+        if (entry != null && ap != null) {
+          this._refreshCamera(`${entry}:${ap}`);
+        }
+      }, EVENT_TYPE),
+    );
+
+    // The structure is cached, so anything that invalidates it has to say so.
+    // A renamed camera entity is the case that bites: the tile would go on
+    // requesting a picture from an entity id that no longer resolves.
+    this._subscriptions.push(
+      this._hass.connection.subscribeEvents(
+        () => this._scheduleReload(),
+        DATA_CHANGED_EVENT,
+      ),
+    );
+    this._subscriptions.push(
+      this._hass.connection.subscribeEvents(
+        () => this._scheduleReload(),
+        "entity_registry_updated",
+      ),
+    );
+  }
+
+  /** Refetch one tile's camera frame, bypassing the browser cache. */
+  _refreshCamera(key) {
+    const camera = this.shadowRoot
+      .querySelector(`.tile[data-ap="${key}"]`)
+      ?.querySelector(".camera");
+    const base = camera?.dataset.picture;
+    if (!base) return;
+    const separator = base.includes("?") ? "&" : "?";
+    camera.style.backgroundImage = `url("${base}${separator}_=${Date.now()}")`;
+  }
+
+  /** Refresh only the tiles the user can actually see. */
+  _startCameraRefresh() {
+    clearInterval(this._cameraTimer);
+    this._observer?.disconnect();
+
+    this._visible = new Set();
+    this._observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const key = entry.target.dataset.ap;
+          if (entry.isIntersecting) this._visible.add(key);
+          else this._visible.delete(key);
+        }
+      },
+      { root: null, rootMargin: "200px" },
+    );
+    for (const tile of this.shadowRoot.querySelectorAll(".tile")) {
+      if (tile.querySelector(".camera")) this._observer.observe(tile);
+    }
+
+    this._cameraTimer = setInterval(() => {
+      for (const key of this._visible) this._refreshCamera(key);
+    }, CAMERA_REFRESH_MS);
+  }
+
+  _scheduleReload() {
+    clearTimeout(this._reloadTimer);
+    this._reloadTimer = setTimeout(() => this._load(), RELOAD_DEBOUNCE_MS);
   }
 
   // --- state helpers -------------------------------------------------------
@@ -236,6 +336,7 @@ class SigurPanel extends HTMLElement {
     this._bind();
     this._paintStates();
     this._paintFeed();
+    this._startCameraRefresh();
   }
 
   _body() {
@@ -260,6 +361,7 @@ class SigurPanel extends HTMLElement {
               <input id="problems" type="checkbox" ${this._onlyProblems ? "checked" : ""} />
               <span>Только проблемные</span>
             </label>
+            <button id="reload" title="Перечитать список точек доступа">Обновить</button>
           </div>
           ${this._servers.map((server) => this._server(server)).join("")}
           ${this._cameraOptions()}
@@ -321,22 +423,25 @@ class SigurPanel extends HTMLElement {
       )
       .join("");
 
+    const passes = [
+      ["in", "Вход", ap.entities.allow_pass_in],
+      ["out", "Выход", ap.entities.allow_pass_out],
+    ]
+      .filter(
+        ([direction, , entity]) =>
+          entity && offersDirection(ap.direction_mode, direction),
+      )
+      .map(
+        ([, label, entity]) =>
+          `<button class="pass-btn" data-press="${escapeHtml(entity)}">${label}</button>`,
+      )
+      .join("");
+
     const controls = server.control_enabled
       ? `
         <select class="mode" data-entity="${escapeHtml(ap.entities.mode ?? "")}"
                 aria-label="Режим точки доступа">${modes}</select>
-        <div class="pass">
-          ${
-            ap.entities.allow_pass_in
-              ? `<button class="pass-btn" data-press="${escapeHtml(ap.entities.allow_pass_in)}">Вход</button>`
-              : ""
-          }
-          ${
-            ap.entities.allow_pass_out
-              ? `<button class="pass-btn" data-press="${escapeHtml(ap.entities.allow_pass_out)}">Выход</button>`
-              : ""
-          }
-        </div>`
+        ${passes ? `<div class="pass">${passes}</div>` : ""}`
       : `<div class="mode-readonly"></div>`;
 
     const gear = this._isAdmin
@@ -383,6 +488,19 @@ class SigurPanel extends HTMLElement {
           <input class="rtsp-input" placeholder="rtsp://…"
                  value="${escapeHtml(ap.rtsp_url ?? "")}" />
         </label>
+        <label>
+          <span>Направление прохода</span>
+          <select class="direction-input">
+            ${Object.entries(DIRECTION_MODES)
+              .map(
+                ([value, label]) =>
+                  `<option value="${value}"${
+                    (ap.direction_mode ?? "both") === value ? " selected" : ""
+                  }>${escapeHtml(label)}</option>`,
+              )
+              .join("")}
+          </select>
+        </label>
         <p class="hint">
           Картинку на плитке даёт camera-сущность. RTSP хранится для
           автоматизаций: браузер не играет его напрямую.
@@ -428,8 +546,10 @@ class SigurPanel extends HTMLElement {
     const tile = this.shadowRoot.querySelector(`.tile[data-ap="${key}"]`);
     const cameraInput = tile?.querySelector(".camera-input");
     const rtspInput = tile?.querySelector(".rtsp-input");
+    const directionInput = tile?.querySelector(".direction-input");
     const camera = clear ? null : cameraInput?.value.trim() || null;
     const rtsp = clear ? null : rtspInput?.value.trim() || null;
+    const direction = clear ? "both" : directionInput?.value || "both";
 
     if (camera && !camera.startsWith("camera.")) {
       this._toast("Идентификатор камеры должен начинаться с camera.");
@@ -443,6 +563,7 @@ class SigurPanel extends HTMLElement {
         access_point_id: Number(apId),
         camera_entity_id: camera,
         rtsp_url: rtsp,
+        direction_mode: direction,
       });
     } catch (err) {
       this._toast(err?.message ?? String(err));
@@ -455,10 +576,12 @@ class SigurPanel extends HTMLElement {
     if (ap) {
       ap.camera_entity_id = camera;
       ap.rtsp_url = rtsp;
+      ap.direction_mode = direction;
     }
     if (clear && cameraInput && rtspInput) {
       cameraInput.value = "";
       rtspInput.value = "";
+      if (directionInput) directionInput.value = "both";
     }
     this._toast(clear ? "Привязка удалена" : "Привязка сохранена");
     this._render();
@@ -471,6 +594,10 @@ class SigurPanel extends HTMLElement {
         this._filter = event.target.value;
         this._paintStates();
       });
+    }
+    const reload = this.shadowRoot.getElementById("reload");
+    if (reload) {
+      reload.addEventListener("click", () => this._load());
     }
     const problems = this.shadowRoot.getElementById("problems");
     if (problems) {
@@ -556,10 +683,24 @@ class SigurPanel extends HTMLElement {
 
         const camera = tile.querySelector(".camera");
         if (camera) {
-          const picture = this._state(camera.dataset.camera)?.attributes
-            ?.entity_picture;
+          const bound = this._state(camera.dataset.camera);
+          const picture = bound?.attributes?.entity_picture;
           if (picture) {
-            camera.style.backgroundImage = `url("${picture}")`;
+            // Only repaint when the underlying URL really changed, so a state
+            // update does not throw away a freshly refetched frame.
+            if (camera.dataset.picture !== picture) {
+              camera.dataset.picture = picture;
+              camera.style.backgroundImage = `url("${picture}")`;
+            }
+            camera.classList.remove("missing");
+            camera.textContent = "";
+          } else {
+            delete camera.dataset.picture;
+            // The entity was renamed or removed. Say so rather than leaving
+            // the previous frame on screen as if it were current.
+            camera.style.backgroundImage = "";
+            camera.classList.add("missing");
+            camera.textContent = bound ? "нет кадра" : "камера недоступна";
           }
         }
       }
@@ -701,6 +842,24 @@ SigurPanel.styles = `
   .tile.offline { opacity: .55; }
   .tile.alert { border-color: var(--warning-color, #ffa600); }
 
+  .camera.missing {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--secondary-text-color);
+  }
+  #reload {
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--divider-color);
+    background: var(--card-background-color);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  #reload:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
   .camera {
     height: 96px;
     margin: -14px -14px 2px;
@@ -796,7 +955,20 @@ SigurPanel.styles = `
     font-size: 13px;
     min-width: 0;
   }
-  .editor input:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
+  .editor select {
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--divider-color);
+    background: var(--secondary-background-color);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+  }
+  .editor input:focus,
+  .editor select:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -1px;
+  }
   .editor .hint { margin: 0; font-size: 11px; color: var(--secondary-text-color); }
   .editor-actions { display: flex; gap: 8px; }
   .editor-actions button {

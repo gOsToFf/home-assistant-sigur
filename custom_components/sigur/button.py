@@ -12,11 +12,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
+from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import ANONYMOUS, Direction, SigurError
+from .bindings import DirectionMode
 from .const import DOMAIN
 from .coordinator import SigurDataUpdateCoordinator
 from .entity import SigurAccessPointEntity
@@ -28,6 +31,19 @@ class SigurPassButtonDescription(ButtonEntityDescription):
     """Describes one one-shot pass button."""
 
     direction: Direction
+
+    @property
+    def offered_direction(self) -> str | None:
+        """The direction this button asks for, or ``None`` if unspecified.
+
+        A directionless button is offered whatever the access point's mode is:
+        it is the right control for a door with a single reader.
+        """
+        if self.direction is Direction.IN:
+            return "in"
+        if self.direction is Direction.OUT:
+            return "out"
+        return None
 
 
 PASS_BUTTONS: tuple[SigurPassButtonDescription, ...] = (
@@ -52,6 +68,12 @@ PASS_BUTTONS: tuple[SigurPassButtonDescription, ...] = (
 )
 
 
+def _offers(mode: DirectionMode, description: SigurPassButtonDescription) -> bool:
+    """Whether ``mode`` offers the pass this button asks for."""
+    direction = description.offered_direction
+    return direction is None or mode.allows(direction)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: SigurConfigEntry,
@@ -67,13 +89,26 @@ async def async_setup_entry(
 
     coordinator = runtime.coordinator
 
+    registry = er.async_get(hass)
+
     @callback
     def _add(ap_ids: list[int]) -> None:
-        async_add_entities(
-            SigurAllowPassButton(coordinator, ap_id, description)
-            for ap_id in ap_ids
-            for description in PASS_BUTTONS
-        )
+        # An access point the user declared one-way only offers the button for
+        # that direction; the opposite one would always be wrong.
+        wanted: list[SigurAllowPassButton] = []
+        for ap_id in ap_ids:
+            mode = runtime.bindings.get(ap_id).direction_mode
+            for description in PASS_BUTTONS:
+                unique_id = f"{entry.entry_id}_{ap_id}_{description.key}"
+                if _offers(mode, description):
+                    wanted.append(SigurAllowPassButton(coordinator, ap_id, description))
+                    continue
+                # Switching a point to one-way leaves the opposite button in
+                # the registry, where it would linger as an unavailable entity.
+                stale = registry.async_get_entity_id(BUTTON_DOMAIN, DOMAIN, unique_id)
+                if stale is not None:
+                    registry.async_remove(stale)
+        async_add_entities(wanted)
 
     _add(list(hub.access_points))
     entry.async_on_unload(hub.async_add_new_access_point_listener(_add))

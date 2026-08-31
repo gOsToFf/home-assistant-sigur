@@ -77,6 +77,7 @@ ATTR_OBJECT_ID: Final = "object_id"
 ATTR_CONFIRM_ALL: Final = "confirm_all_access_points"
 ATTR_CAMERA_ENTITY_ID: Final = "camera_entity_id"
 ATTR_RTSP_URL: Final = "rtsp_url"
+ATTR_DIRECTION_MODE: Final = "direction_mode"
 
 # --- Storage ----------------------------------------------------------------
 
@@ -94,8 +95,11 @@ BINDINGS_STORAGE_KEY: Final = f"{DOMAIN}.bindings"
 PANEL_URL_PATH: Final = "sigur"
 PANEL_TITLE: Final = "Sigur"
 PANEL_ICON: Final = "mdi:door-sliding"
-#: Bumped whenever the panel module changes, to bust the browser cache.
-PANEL_VERSION: Final = "0.2.0b2"
+
+#: Fired when the structure the panel caches has changed - a bound camera was
+#: renamed or removed, or a binding was edited - so an open panel reloads
+#: instead of pointing at an entity that no longer exists.
+PANEL_DATA_CHANGED: Final = f"{DOMAIN}_panel_data_changed"
 
 # --- Repairs ----------------------------------------------------------------
 

@@ -8,6 +8,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import DEFAULT_OIF_VERSION
+from .bindings import DirectionMode
 from .const import (
     ACCESS_POINT_MODEL,
     CONF_OIF_VERSION,
@@ -17,7 +18,7 @@ from .const import (
 )
 from .coordinator import SigurDataUpdateCoordinator
 from .models import AccessPointState
-from .runtime import SigurHub
+from .runtime import SigurHub, SigurRuntimeData
 
 
 def hub_device_identifier(entry_id: str) -> tuple[str, str]:
@@ -78,6 +79,16 @@ class SigurAccessPointEntity(CoordinatorEntity[SigurDataUpdateCoordinator]):
         return self.coordinator.hub
 
     @property
+    def _direction_mode(self) -> str:
+        """Which pass directions the user declared for this access point."""
+        runtime: SigurRuntimeData | None = getattr(
+            self.coordinator.config_entry, "runtime_data", None
+        )
+        if runtime is None:
+            return DirectionMode.BOTH.value
+        return runtime.bindings.get(self._ap_id).direction_mode.value
+
+    @property
     def ap_state(self) -> AccessPointState:
         """Current state of this access point."""
         return self.hub.access_points.get(self._ap_id) or AccessPointState(
@@ -97,7 +108,10 @@ class SigurAccessPointEntity(CoordinatorEntity[SigurDataUpdateCoordinator]):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose the access point id and its zones."""
         state = self.ap_state
-        attributes: dict[str, Any] = {"access_point_id": self._ap_id}
+        attributes: dict[str, Any] = {
+            "access_point_id": self._ap_id,
+            "direction_mode": self._direction_mode,
+        }
         if state.info is not None:
             attributes["zone_a"] = state.info.zone_a
             attributes["zone_b"] = state.info.zone_b

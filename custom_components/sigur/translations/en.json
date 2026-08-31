@@ -312,6 +312,10 @@
         "rtsp_url": {
           "name": "RTSP URL",
           "description": "Stored as-is. A browser cannot play RTSP directly, so this alone does not display video anywhere."
+        },
+        "direction_mode": {
+          "name": "Pass direction",
+          "description": "Which way people may pass. OIF does not report this, so it is declared here. A one-way access point only offers the button for that direction."
         }
       }
     }
@@ -357,6 +361,13 @@
         "in": "In",
         "out": "Out",
         "unknown": "Unknown"
+      }
+    },
+    "pass_direction_mode": {
+      "options": {
+        "both": "Both ways",
+        "in": "Entry only",
+        "out": "Exit only"
       }
     }
   },

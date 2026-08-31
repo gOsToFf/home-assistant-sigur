@@ -6,32 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.2.0b2] - 2026-08-28
-
-### Added
-
-- A way to actually attach a camera. `0.2.0b1` shipped the storage and the
-  websocket command but no interface, which left the feature unreachable
-  without a browser console.
-  - In the panel, a gear on each access point tile opens an inline editor with
-    a camera entity field, completed from the cameras Home Assistant already
-    has, and an RTSP field. Administrators only.
-  - `sigur.set_access_point_camera` does the same from an automation or in
-    bulk. It is not behind the control option, because recording which camera
-    watches a door opens nothing; calling it with neither field clears the
-    binding.
-
-### Fixed
-
-- The panel failed to load after its cache-busting version changed. The module
-  can be evaluated twice in one page session, and the second
-  `customElements.define` threw, leaving the sidebar entry blank until a hard
-  refresh.
-
-## [0.2.0b1] - 2026-08-28
-
-First beta of the sidebar panel. Betas are only offered to users who turn on
-the per-repository **Pre-release** switch in HACS.
+## [0.2.0] - unreleased
 
 ### Added
 
@@ -43,18 +18,43 @@ the per-repository **Pre-release** switch in HACS.
   buttons - shown only while control is enabled for that server; otherwise the
   tile is read-only and says so.
 - A live event feed beside the tiles, fed from the `sigur_event` bus event.
-- Per-access-point bindings: a Home Assistant camera entity and/or a raw RTSP
-  URL can be attached to an access point and are persisted per config entry.
-  A bound camera's snapshot appears on the tile. The RTSP URL is stored for
-  automations and for a future camera platform; a browser cannot play RTSP
-  directly, so it renders nothing on its own yet.
-- `sigur/panel/data` and `sigur/panel/set_binding` websocket commands. Setting
-  a binding requires an administrator.
+- A camera can be attached to an access point, from a gear on its tile
+  (administrators only) or with the `sigur.set_access_point_camera` action for
+  automations and bulk setup. Attaching one does not require the control
+  option, because recording which camera watches a door opens nothing.
+  - A Home Assistant `camera.*` entity is what puts a picture on the tile; the
+    stream stays the responsibility of whichever integration provides it.
+  - A raw RTSP URL can be stored alongside or instead, for automations and for
+    a future camera platform. A browser cannot play RTSP directly, so on its
+    own it displays nothing.
+  - The binding follows its entity: renaming a bound camera rewrites it, and
+    removing the camera clears it while keeping any RTSP URL.
+- The camera frame refreshes the moment an event arrives for that access
+  point, which is when it is worth looking at, and every 30 seconds for tiles
+  that are on screen. Home Assistant only rotates the token inside
+  `entity_picture` every five minutes, so the picture would otherwise be up to
+  that stale; refreshing only visible tiles keeps a hundred access points from
+  meaning a hundred JPEG fetches per tick.
+- A pass direction per access point: both ways, entry only or exit only. OIF
+  reports the zone on each side but never whether the point is one-way, so it
+  is declared by the user rather than guessed from a name - a wrong guess on a
+  control that opens a barrier is not a small thing. A one-way point only
+  offers the button for its direction, and the withdrawn button is removed
+  from the registry instead of lingering as an unavailable entity. The
+  directionless button survives either way, for doors with a single reader.
+  The mode is exposed as a `direction_mode` attribute for automations.
+- `sigur/panel/data` and `sigur/panel/set_binding` websocket commands.
 
 ### Changed
 
 - The integration now depends on `frontend` and `panel_custom`, which it needs
-  to register the panel.
+  in order to register the panel.
+- The panel's cache-busting token is derived from the module's own contents. A
+  hand-maintained constant is forgotten exactly when the panel changes, and
+  the browser then keeps running the previous module.
+- The panel's static route is registered once per Home Assistant run rather
+  than per panel registration; reloading a config entry raised "route will
+  never be executed" because an aiohttp route cannot be replaced.
 
 ## [0.1.0] - 2026-08-28
 
@@ -101,7 +101,5 @@ First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025
 - Russian and English translations, with error messages that follow the Home
   Assistant language.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.0b2...HEAD
-[0.2.0b2]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.0b2
-[0.2.0b1]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.0b1
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0

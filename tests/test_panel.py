@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from homeassistant.components import frontend
 from homeassistant.const import ATTR_ENTITY_ID
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
+from homeassistant.helpers import entity_registry as er
 import pytest
 import voluptuous as vol
 
 from custom_components.sigur.const import (
     DOMAIN,
     OPT_ENABLE_CONTROL,
+    PANEL_DATA_CHANGED,
     PANEL_URL_PATH,
     SERVICE_SET_CAMERA,
 )
@@ -152,6 +154,7 @@ async def test_binding_a_camera_round_trips(
     assert response["result"] == {
         "camera_entity_id": "camera.entrance",
         "rtsp_url": "rtsp://10.0.0.5:554/live",
+        "direction_mode": "both",
     }
 
     await client.send_json_auto_id({"type": "sigur/panel/data"})
@@ -207,7 +210,11 @@ async def test_a_binding_can_be_cleared(
         )
         response = await client.receive_json()
         assert response["success"]
-    assert response["result"] == {"camera_entity_id": None, "rtsp_url": None}
+    assert response["result"] == {
+        "camera_entity_id": None,
+        "rtsp_url": None,
+        "direction_mode": "both",
+    }
 
 
 async def test_binding_an_unknown_access_point_is_rejected(
@@ -359,3 +366,93 @@ async def test_attaching_a_camera_does_not_need_control_enabled(
         blocking=True,
     )
     assert not [line for line in server.received if line.startswith("SETAPMODE")]
+
+
+async def test_a_binding_follows_a_renamed_camera(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """An entity id is not stable, so the binding has to follow a rename.
+
+    This is what broke in the field: the panel kept requesting a picture from
+    the old entity id, and Home Assistant rejected every request.
+    """
+    entry = await _setup(hass, server)
+    registry = er.async_get(hass)
+    camera = registry.async_get_or_create(
+        "camera", "generic", "unique-cam", suggested_object_id="barrier_one"
+    )
+    assert camera.entity_id == "camera.barrier_one"
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "sigur/panel/set_binding",
+            "entry_id": entry.entry_id,
+            "access_point_id": 1,
+            "camera_entity_id": camera.entity_id,
+        }
+    )
+    assert (await client.receive_json())["success"]
+
+    registry.async_update_entity(camera.entity_id, new_entity_id="camera.renamed")
+    await hass.async_block_till_done()
+
+    await client.send_json_auto_id({"type": "sigur/panel/data"})
+    data = await client.receive_json()
+    points = {ap["id"]: ap for ap in data["result"]["servers"][0]["access_points"]}
+    assert points[1]["camera_entity_id"] == "camera.renamed"
+
+
+async def test_a_binding_is_dropped_when_the_camera_is_removed(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """A removed camera leaves no dangling reference behind."""
+    entry = await _setup(hass, server)
+    registry = er.async_get(hass)
+    camera = registry.async_get_or_create(
+        "camera", "generic", "unique-cam-2", suggested_object_id="barrier_two"
+    )
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "sigur/panel/set_binding",
+            "entry_id": entry.entry_id,
+            "access_point_id": 1,
+            "camera_entity_id": camera.entity_id,
+            "rtsp_url": "rtsp://user:password@10.0.0.5:554/stream",
+        }
+    )
+    assert (await client.receive_json())["success"]
+
+    registry.async_remove(camera.entity_id)
+    await hass.async_block_till_done()
+
+    await client.send_json_auto_id({"type": "sigur/panel/data"})
+    data = await client.receive_json()
+    points = {ap["id"]: ap for ap in data["result"]["servers"][0]["access_points"]}
+    assert points[1]["camera_entity_id"] is None
+    # The RTSP URL is independent of the entity and survives.
+    assert points[1]["rtsp_url"] == "rtsp://user:password@10.0.0.5:554/stream"
+
+
+async def test_the_panel_is_told_when_its_data_goes_stale(
+    hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
+) -> None:
+    """The panel caches structure, so a change has to announce itself."""
+    entry = await _setup(hass, server)
+    fired: list[Event] = []
+    hass.bus.async_listen(PANEL_DATA_CHANGED, fired.append)
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "sigur/panel/set_binding",
+            "entry_id": entry.entry_id,
+            "access_point_id": 1,
+            "camera_entity_id": "camera.entrance",
+        }
+    )
+    assert (await client.receive_json())["success"]
+    await hass.async_block_till_done()
+
+    assert [event.data["entry_id"] for event in fired] == [entry.entry_id]
