@@ -90,7 +90,7 @@
         "data_description": {
           "scan_interval": "How often GETAPINFO is polled. Events update entities immediately, so this is only a safety net.",
           "enable_control": "Off by default. Turning this on lets Home Assistant lock, unlock and open doors.",
-          "enable_pass_covers": "Off by default. Adds a cover next to each pass button, so voice assistants that only understand \"open\" - Alice, Google, Siri - can authorise a single pass. Needs control to be enabled. The cover reports the real door position and only supports opening.",
+          "enable_pass_covers": "Off by default. Adds one openable cover per access point, so voice assistants that only understand \"open\" - Alice, Google, Siri - can authorise a single pass. It asks for no direction and carries the access point's own name, which is what the assistant repeats back. Needs control to be enabled; the cover reports the real door position and only supports opening.",
           "enable_personal_data": "Off by default. Turning this on shows names and object ids in entities, events and diagnostics.",
           "resolve_object_names": "Fetches a name with GETOBJECTINFO when an event does not carry one. Results are cached briefly."
         }
@@ -169,17 +169,6 @@
       },
       "allow_pass_unknown": {
         "name": "Allow pass"
-      }
-    },
-    "cover": {
-      "pass_cover_in": {
-        "name": "Entry"
-      },
-      "pass_cover_out": {
-        "name": "Exit"
-      },
-      "pass_cover_unknown": {
-        "name": "Pass"
       }
     },
     "event": {

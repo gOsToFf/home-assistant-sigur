@@ -1,4 +1,4 @@
-"""Tests for the one-shot pass covers."""
+"""Tests for the one-shot pass cover."""
 
 from __future__ import annotations
 
@@ -76,87 +76,52 @@ async def test_no_covers_while_control_is_disabled(
     assert _covers(hass, entry.entry_id) == set()
 
 
-async def test_covers_appear_once_both_options_are_on(
+async def test_one_cover_per_access_point(
     hass: HomeAssistant, server: FakeSigurServer
 ) -> None:
-    """Each access point gets an entry, an exit and a directionless cover."""
+    """One access point, one thing to open - no direction to disambiguate."""
     entry = await _setup(hass, server, options=COVERS_ON)
-    unique_ids = _covers(hass, entry.entry_id)
-    for ap_id in (1, 2):
-        for key in ("pass_cover_in", "pass_cover_out", "pass_cover_unknown"):
-            assert f"{entry.entry_id}_{ap_id}_{key}" in unique_ids
-
-
-async def test_the_directionless_cover_is_disabled_by_default(
-    hass: HomeAssistant, server: FakeSigurServer
-) -> None:
-    """As with the matching button, most access points have a direction."""
-    entry = await _setup(hass, server, options=COVERS_ON)
-    registry = er.async_get(hass)
-    entries = {
-        item.unique_id: item
-        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    assert _covers(hass, entry.entry_id) == {
+        f"{entry.entry_id}_1_pass_cover",
+        f"{entry.entry_id}_2_pass_cover",
     }
-    assert entries[f"{entry.entry_id}_1_pass_cover_in"].disabled_by is None
-    assert (
-        entries[f"{entry.entry_id}_1_pass_cover_unknown"].disabled_by
-        is er.RegistryEntryDisabler.INTEGRATION
-    )
 
 
-async def test_opening_the_entry_cover_sends_allowpass_in(
+async def test_the_cover_carries_the_access_point_name(hass: HomeAssistant) -> None:
+    """What the assistant repeats back has to be the access point, nothing more.
+
+    As the device's primary entity the cover takes its name, so a voice command
+    is "open Въезд 1" rather than "open Въезд 1 pass".
+    """
+    fake = FakeSigurServer(access_points=[FakeAccessPoint(1, "Въезд 1")])
+    await fake.start()
+    try:
+        await _setup(hass, fake, options=COVERS_ON)
+        state = hass.states.get("cover.vezd_1")
+        assert state is not None
+        assert state.attributes["friendly_name"] == "Въезд 1"
+    finally:
+        await fake.stop()
+
+
+async def test_opening_sends_a_directionless_allowpass(
     hass: HomeAssistant, server: FakeSigurServer
 ) -> None:
-    """Opening is exactly the ALLOWPASS its button sends, nothing more."""
+    """Sigur is the one that knows how the point is wired; let it decide."""
     await _setup(hass, server, options=COVERS_ON)
-    await _open(hass, "cover.glavnyi_vkhod_entry")
-    assert "ALLOWPASS 1 ANONYMOUS IN" in server.received
+    await _open(hass, "cover.glavnyi_vkhod")
+    assert "ALLOWPASS 1 ANONYMOUS UNKNOWN" in server.received
     assert not [line for line in server.received if line.startswith("SETAPMODE")]
 
 
-async def test_opening_the_exit_cover_sends_allowpass_out(
-    hass: HomeAssistant, server: FakeSigurServer
-) -> None:
-    """The mirror case."""
-    await _setup(hass, server, options=COVERS_ON)
-    await _open(hass, "cover.turniket_exit")
-    assert "ALLOWPASS 2 ANONYMOUS OUT" in server.received
-
-
-async def test_the_cover_reports_the_real_door_position(hass: HomeAssistant) -> None:
-    """A pass authorises an opening; the door sensor says whether it opened."""
-    fake = FakeSigurServer(
-        access_points=[
-            FakeAccessPoint(1, "Ворота", open_state="OPENED"),
-            FakeAccessPoint(2, "Калитка", open_state="CLOSED"),
-        ]
-    )
-    await fake.start()
-    try:
-        await _setup(hass, fake, options=COVERS_ON)
-        assert hass.states.get("cover.vorota_entry").state == "open"
-        assert hass.states.get("cover.kalitka_entry").state == "closed"
-    finally:
-        await fake.stop()
-
-
-async def test_an_unknown_door_position_stays_unknown(hass: HomeAssistant) -> None:
-    """Sigur says UNKNOWN when no door sensor is wired up; do not invent one."""
-    fake = FakeSigurServer(
-        access_points=[FakeAccessPoint(1, "Шлагбаум", open_state="UNKNOWN")]
-    )
-    await fake.start()
-    try:
-        await _setup(hass, fake, options=COVERS_ON)
-        assert hass.states.get("cover.shlagbaum_entry").state == "unknown"
-    finally:
-        await fake.stop()
-
-
-async def test_a_one_way_access_point_offers_only_its_direction(
+async def test_a_one_way_access_point_still_gets_its_cover(
     hass: HomeAssistant, server: FakeSigurServer, hass_ws_client
 ) -> None:
-    """The covers follow the declared direction, exactly as the buttons do."""
+    """The declared direction shapes the buttons, not the cover.
+
+    A one-way point has exactly one thing an assistant can ask for, and the
+    direction is Sigur's business rather than the caller's.
+    """
     entry = await _setup(hass, server, options=COVERS_ON)
     client = await hass_ws_client(hass)
     await client.send_json_auto_id(
@@ -170,15 +135,39 @@ async def test_a_one_way_access_point_offers_only_its_direction(
     assert (await client.receive_json())["success"]
     await hass.async_block_till_done()
 
-    assert hass.states.get("cover.glavnyi_vkhod_entry") is not None
-    assert hass.states.get("cover.glavnyi_vkhod_exit") is None
-    registry = er.async_get(hass)
-    assert (
-        registry.async_get_entity_id(
-            "cover", DOMAIN, f"{entry.entry_id}_1_pass_cover_out"
-        )
-        is None
+    assert hass.states.get("cover.glavnyi_vkhod") is not None
+    # The buttons still follow the declaration.
+    assert hass.states.get("button.glavnyi_vkhod_allow_exit") is None
+
+
+async def test_the_cover_reports_the_real_door_position(hass: HomeAssistant) -> None:
+    """A pass authorises an opening; the door sensor says whether it opened."""
+    fake = FakeSigurServer(
+        access_points=[
+            FakeAccessPoint(1, "Ворота", open_state="OPENED"),
+            FakeAccessPoint(2, "Калитка", open_state="CLOSED"),
+        ]
     )
+    await fake.start()
+    try:
+        await _setup(hass, fake, options=COVERS_ON)
+        assert hass.states.get("cover.vorota").state == "open"
+        assert hass.states.get("cover.kalitka").state == "closed"
+    finally:
+        await fake.stop()
+
+
+async def test_an_unknown_door_position_stays_unknown(hass: HomeAssistant) -> None:
+    """Sigur says UNKNOWN when no door sensor is wired up; do not invent one."""
+    fake = FakeSigurServer(
+        access_points=[FakeAccessPoint(1, "Шлагбаум", open_state="UNKNOWN")]
+    )
+    await fake.start()
+    try:
+        await _setup(hass, fake, options=COVERS_ON)
+        assert hass.states.get("cover.shlagbaum").state == "unknown"
+    finally:
+        await fake.stop()
 
 
 async def test_turning_the_option_off_removes_the_covers(
@@ -192,7 +181,28 @@ async def test_turning_the_option_off_removes_the_covers(
     await hass.async_block_till_done()
 
     assert _covers(hass, entry.entry_id) == set()
-    assert hass.states.get("cover.glavnyi_vkhod_entry") is None
+    assert hass.states.get("cover.glavnyi_vkhod") is None
+
+
+async def test_the_per_direction_covers_of_0_2_0_are_cleaned_up(
+    hass: HomeAssistant, server: FakeSigurServer
+) -> None:
+    """Upgrading must not leave two dead entities on every access point."""
+    entry = make_entry(server.port, options=COVERS_ON)
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    for key in ("pass_cover_in", "pass_cover_out", "pass_cover_unknown"):
+        registry.async_get_or_create(
+            "cover", DOMAIN, f"{entry.entry_id}_1_{key}", config_entry=entry
+        )
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _covers(hass, entry.entry_id) == {
+        f"{entry.entry_id}_1_pass_cover",
+        f"{entry.entry_id}_2_pass_cover",
+    }
 
 
 async def test_a_refused_pass_surfaces_as_an_error(hass: HomeAssistant) -> None:
@@ -203,7 +213,7 @@ async def test_a_refused_pass_surfaces_as_an_error(hass: HomeAssistant) -> None:
         await _setup(hass, fake, options=COVERS_ON)
         fake.access_points.clear()
         with pytest.raises(HomeAssistantError) as excinfo:
-            await _open(hass, "cover.vorota_entry")
+            await _open(hass, "cover.vorota")
         assert excinfo.value.translation_key == "allow_pass_failed"
     finally:
         await fake.stop()

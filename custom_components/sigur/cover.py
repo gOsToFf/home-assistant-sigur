@@ -5,10 +5,21 @@ naturally onto a ``button``. Voice assistants do not speak button: Yandex
 Alice, Google and Siri all reach an access point through an *openable* device,
 and in Home Assistant that is a ``cover``.
 
-So these entities are a second face on the same command - opening one sends
-exactly the ``ALLOWPASS`` its button sends. They are off by default, because
-most installations do not need two controls for one action, and they follow
-the control option for the same reason the buttons do: they open doors.
+So this entity is a second face on the same command - opening it sends exactly
+the ``ALLOWPASS`` the pass button sends. It is off by default, because most
+installations do not need two controls for one action, and it follows the
+control option for the same reason the buttons do: it opens doors.
+
+There is exactly one cover per access point and it asks for no direction.
+Directions are a real distinction for automations, which is why the buttons
+keep them, but they are the wrong shape here: "Alice, open entrance 1" carries
+no direction, and a cover per direction would only make the assistant ask
+which of two identical doors was meant. ``ALLOWPASS ... UNKNOWN`` leaves that
+decision to Sigur, which is the one that knows how the point is wired.
+
+Being the only cover, it is also the access point's primary entity - its name
+is the access point's own, so an assistant hears "Въезд 1" rather than
+"Въезд 1 Проход".
 
 The state is the real door position reported by OIF, not a guess from the last
 command. A pass authorises an opening; whether the door then opened is
@@ -17,12 +28,11 @@ something the door sensor knows and this entity should not pretend to.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Final
 
 from homeassistant.components.cover import (
     CoverDeviceClass,
     CoverEntity,
-    CoverEntityDescription,
     CoverEntityFeature,
 )
 from homeassistant.components.cover.const import DOMAIN as COVER_DOMAIN
@@ -32,58 +42,17 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import ANONYMOUS, ApOpenState, Direction, SigurError
-from .bindings import DirectionMode
 from .const import DOMAIN
 from .coordinator import SigurDataUpdateCoordinator
 from .entity import SigurAccessPointEntity
 from .runtime import SigurConfigEntry
 
-
-@dataclass(frozen=True, kw_only=True)
-class SigurPassCoverDescription(CoverEntityDescription):
-    """Describes one one-shot pass cover."""
-
-    direction: Direction
-
-    @property
-    def offered_direction(self) -> str | None:
-        """The direction this cover asks for, or ``None`` if unspecified."""
-        if self.direction is Direction.IN:
-            return "in"
-        if self.direction is Direction.OUT:
-            return "out"
-        return None
-
-
-PASS_COVERS: tuple[SigurPassCoverDescription, ...] = (
-    SigurPassCoverDescription(
-        key="pass_cover_in",
-        translation_key="pass_cover_in",
-        device_class=CoverDeviceClass.DOOR,
-        direction=Direction.IN,
-    ),
-    SigurPassCoverDescription(
-        key="pass_cover_out",
-        translation_key="pass_cover_out",
-        device_class=CoverDeviceClass.DOOR,
-        direction=Direction.OUT,
-    ),
-    SigurPassCoverDescription(
-        key="pass_cover_unknown",
-        translation_key="pass_cover_unknown",
-        device_class=CoverDeviceClass.DOOR,
-        direction=Direction.UNKNOWN,
-        # As with the matching button: a door with a single reader has no
-        # meaningful direction, but most access points do.
-        entity_registry_enabled_default=False,
-    ),
-)
-
-
-def _offers(mode: DirectionMode, description: SigurPassCoverDescription) -> bool:
-    """Whether ``mode`` offers the pass this cover asks for."""
-    direction = description.offered_direction
-    return direction is None or mode.allows(direction)
+#: Unique id suffix of the cover, and of the per-direction covers 0.2.0 shipped
+#: before the directionless one replaced all three. The old ones are removed
+#: from the registry wherever they are found, so an upgrade does not leave two
+#: dead entities on every access point.
+COVER_KEY: Final = "pass_cover"
+LEGACY_COVER_KEYS: Final = ("pass_cover_in", "pass_cover_out", "pass_cover_unknown")
 
 
 async def async_setup_entry(
@@ -94,56 +63,35 @@ async def async_setup_entry(
     """Create the pass covers, if the user asked for them."""
     runtime = entry.runtime_data
     hub = runtime.hub
-    # Changing either option reloads the entry, so the covers appear and
-    # disappear as soon as the user decides.
-    if not hub.options.enable_control or not hub.options.enable_pass_covers:
-        _async_purge(hass, entry, list(hub.access_points))
-        return
-
     coordinator = runtime.coordinator
     registry = er.async_get(hass)
+    # Changing either option reloads the entry, so the covers appear and
+    # disappear as soon as the user decides.
+    wanted = hub.options.enable_control and hub.options.enable_pass_covers
 
     @callback
     def _add(ap_ids: list[int]) -> None:
-        wanted: list[SigurPassCover] = []
         for ap_id in ap_ids:
-            mode = runtime.bindings.get(ap_id).direction_mode
-            for description in PASS_COVERS:
-                if _offers(mode, description):
-                    wanted.append(SigurPassCover(coordinator, ap_id, description))
-                    continue
-                # Switching a point to one-way leaves the opposite cover in the
-                # registry, where it would linger as an unavailable entity.
-                _remove_stale(registry, entry.entry_id, ap_id, description.key)
-        async_add_entities(wanted)
+            for key in LEGACY_COVER_KEYS:
+                _remove(registry, entry.entry_id, ap_id, key)
+            if not wanted:
+                # Without this the cover would stay in the registry as an
+                # unavailable entity, and an assistant that already knows it
+                # would keep offering a control that no longer does anything.
+                _remove(registry, entry.entry_id, ap_id, COVER_KEY)
+        if wanted:
+            async_add_entities(SigurPassCover(coordinator, ap_id) for ap_id in ap_ids)
 
     _add(list(hub.access_points))
     entry.async_on_unload(hub.async_add_new_access_point_listener(_add))
 
 
 @callback
-def _async_purge(
-    hass: HomeAssistant, entry: SigurConfigEntry, ap_ids: list[int]
-) -> None:
-    """Drop every pass cover of this entry after the option was turned off.
-
-    Without this the covers would stay in the registry as unavailable
-    entities, and a voice assistant that already knows them would keep
-    offering a control that no longer does anything.
-    """
-    registry = er.async_get(hass)
-    for ap_id in ap_ids:
-        for description in PASS_COVERS:
-            _remove_stale(registry, entry.entry_id, ap_id, description.key)
-
-
-@callback
-def _remove_stale(
-    registry: er.EntityRegistry, entry_id: str, ap_id: int, key: str
-) -> None:
-    """Remove the cover for ``key`` if it is still registered."""
-    unique_id = f"{entry_id}_{ap_id}_{key}"
-    stale = registry.async_get_entity_id(COVER_DOMAIN, DOMAIN, unique_id)
+def _remove(registry: er.EntityRegistry, entry_id: str, ap_id: int, key: str) -> None:
+    """Remove the cover registered for ``key``, if there is one."""
+    stale = registry.async_get_entity_id(
+        COVER_DOMAIN, DOMAIN, f"{entry_id}_{ap_id}_{key}"
+    )
     if stale is not None:
         registry.async_remove(stale)
 
@@ -151,22 +99,20 @@ def _remove_stale(
 class SigurPassCover(SigurAccessPointEntity, CoverEntity):
     """Authorises a single pass, and reports the real door position."""
 
-    entity_description: SigurPassCoverDescription
+    _attr_device_class = CoverDeviceClass.DOOR
+
+    # The access point's primary entity: it carries the device's own name
+    # rather than a suffixed one, which is what a voice assistant repeats back.
+    _attr_name = None
 
     # Opening is the only thing a pass can do. A Sigur access point closes on
     # its own, and claiming a close command this integration cannot honour
     # would put a dead button in every assistant that reads the features.
     _attr_supported_features = CoverEntityFeature.OPEN
 
-    def __init__(
-        self,
-        coordinator: SigurDataUpdateCoordinator,
-        ap_id: int,
-        description: SigurPassCoverDescription,
-    ) -> None:
-        """Create the cover described by ``description``."""
-        super().__init__(coordinator, ap_id, description.key)
-        self.entity_description = description
+    def __init__(self, coordinator: SigurDataUpdateCoordinator, ap_id: int) -> None:
+        """Create the pass cover for ``ap_id``."""
+        super().__init__(coordinator, ap_id, COVER_KEY)
 
     @property
     def is_closed(self) -> bool | None:
@@ -189,9 +135,7 @@ class SigurPassCover(SigurAccessPointEntity, CoverEntity):
 
         """
         try:
-            await self.hub.async_allow_pass(
-                self._ap_id, ANONYMOUS, self.entity_description.direction
-            )
+            await self.hub.async_allow_pass(self._ap_id, ANONYMOUS, Direction.UNKNOWN)
         except SigurError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
