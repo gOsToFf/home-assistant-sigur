@@ -114,8 +114,8 @@ async def test_set_mode_targets_a_device(
 ) -> None:
     """Targeting the access point device works as well as targeting an entity."""
     entry = await _setup(hass, server, options=CONTROL_ON)
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, f"{entry.entry_id}_ap_2")}
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, f"{entry.entry_id}_ap_2"), entry.entry_id
     )
     assert device is not None
     await hass.services.async_call(

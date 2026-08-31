@@ -177,8 +177,14 @@ class FakeSigurServer:
         self.on_command: Callable[[str], None] | None = None
         """Hook invoked for every received command, before it is handled."""
 
+        self._client_tasks: set[asyncio.Task[None]] = set()
+        self._previous_exception_handler: Any = None
+
     async def start(self, host: str = "127.0.0.1") -> int:
         """Start listening on an ephemeral port and return it."""
+        loop = asyncio.get_running_loop()
+        self._previous_exception_handler = loop.get_exception_handler()
+        loop.set_exception_handler(self._on_loop_exception)
         self._server = await asyncio.start_server(
             self._handle_client, host, 0, ssl=self._ssl_context
         )
@@ -192,11 +198,28 @@ class FakeSigurServer:
                 writer.close()
         self._writers.clear()
         self._subscribed.clear()
+        # A connection parked in `hang_commands` is asleep for an hour and will
+        # not notice its writer closing, so it has to be cancelled outright.
+        # Otherwise it outlives the test and the harness reports it as leaked.
+        tasks = list(self._client_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            # Bounded on purpose: tearing down a test double must never be the
+            # thing that hangs a test run, however wedged a connection got.
+            await asyncio.wait(tasks, timeout=5)
+        self._client_tasks.clear()
         if self._server is not None:
             self._server.close()
-            with contextlib.suppress(Exception):
-                await self._server.wait_closed()
+            with contextlib.suppress(Exception, TimeoutError):
+                async with asyncio.timeout(5):
+                    await self._server.wait_closed()
             self._server = None
+        with contextlib.suppress(RuntimeError):
+            asyncio.get_running_loop().set_exception_handler(
+                self._previous_exception_handler
+            )
+        self._previous_exception_handler = None
 
     async def drop_all_connections(self) -> None:
         """Simulate a server restart by dropping live sessions."""
@@ -229,12 +252,32 @@ class FakeSigurServer:
         """How many connections currently hold a subscription."""
         return len(self._subscribed)
 
+    def _on_loop_exception(self, loop: Any, context: dict[str, Any]) -> None:
+        """Swallow the noise a deliberately broken connection makes.
+
+        The TLS tests reject the server certificate or withhold a client one on
+        purpose, so the handshake fails - on the server side that surfaces from
+        asyncio's SSL layer, before any handler runs, and the test harness
+        counts an unhandled loop exception against the test. The failure is the
+        scenario, not a fault, so it is dropped here; everything else is passed
+        on to whoever was handling exceptions before.
+        """
+        exception = context.get("exception")
+        if isinstance(exception, ssl.SSLError | ConnectionResetError | BrokenPipeError):
+            return
+        if self._previous_exception_handler is not None:
+            self._previous_exception_handler(loop, context)
+            return
+        loop.default_exception_handler(context)
+
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         """Serve one client connection until it goes away."""
         self.connection_count += 1
         self._writers.add(writer)
+        if (task := asyncio.current_task()) is not None:
+            self._client_tasks.add(task)
         logged_in = False
         try:
             while True:
@@ -283,6 +326,8 @@ class FakeSigurServer:
         except Exception:
             _LOGGER.exception("Fake Sigur server failed while serving a client")
         finally:
+            if (task := asyncio.current_task()) is not None:
+                self._client_tasks.discard(task)
             self._writers.discard(writer)
             self._subscribed.pop(writer, None)
             with contextlib.suppress(Exception):

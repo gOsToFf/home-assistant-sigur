@@ -45,13 +45,15 @@ async def test_setup_creates_hub_and_access_point_devices(
     assert entry.state is ConfigEntryState.LOADED
 
     devices = dr.async_get(hass)
-    hub = devices.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    hub = devices.async_get_device_by_identifier(
+        (DOMAIN, entry.entry_id), entry.entry_id
+    )
     assert hub is not None
     assert hub.name == "Sigur - Офис"
 
     for ap_id, expected in ((1, "Главный вход"), (2, "Турникет")):
-        device = devices.async_get_device(
-            identifiers={(DOMAIN, f"{entry.entry_id}_ap_{ap_id}")}
+        device = devices.async_get_device_by_identifier(
+            (DOMAIN, f"{entry.entry_id}_ap_{ap_id}"), entry.entry_id
         )
         assert device is not None
         assert device.name == expected
@@ -185,11 +187,11 @@ async def test_two_servers_with_the_same_access_point_ids(hass: HomeAssistant) -
         assert entry_b.state is ConfigEntryState.LOADED
 
         devices = dr.async_get(hass)
-        device_a = devices.async_get_device(
-            identifiers={(DOMAIN, f"{entry_a.entry_id}_ap_1")}
+        device_a = devices.async_get_device_by_identifier(
+            (DOMAIN, f"{entry_a.entry_id}_ap_1"), entry_a.entry_id
         )
-        device_b = devices.async_get_device(
-            identifiers={(DOMAIN, f"{entry_b.entry_id}_ap_1")}
+        device_b = devices.async_get_device_by_identifier(
+            (DOMAIN, f"{entry_b.entry_id}_ap_1"), entry_b.entry_id
         )
         assert device_a is not None and device_b is not None
         assert device_a.id != device_b.id
@@ -223,7 +225,9 @@ async def test_new_access_points_are_added_on_the_next_poll(
 
     devices = dr.async_get(hass)
     assert (
-        devices.async_get_device(identifiers={(DOMAIN, f"{entry.entry_id}_ap_7")})
+        devices.async_get_device_by_identifier(
+            (DOMAIN, f"{entry.entry_id}_ap_7"), entry.entry_id
+        )
         is not None
     )
     assert hass.states.get("binary_sensor.novaia_dver_link") is not None
@@ -242,6 +246,8 @@ async def test_removed_access_point_becomes_unavailable_not_deleted(
     assert hass.states.get("binary_sensor.turniket_link").state == "unavailable"
     devices = dr.async_get(hass)
     assert (
-        devices.async_get_device(identifiers={(DOMAIN, f"{entry.entry_id}_ap_2")})
+        devices.async_get_device_by_identifier(
+            (DOMAIN, f"{entry.entry_id}_ap_2"), entry.entry_id
+        )
         is not None
     )
