@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 
 from .bindings import BindingStore
@@ -27,6 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.COVER,
     Platform.EVENT,
     Platform.SELECT,
     Platform.SENSOR,
@@ -58,6 +59,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SigurConfigEntry) -> boo
         await hub.async_shutdown()
         raise
 
+    _async_purge_excluded_devices(hass, entry, hub)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     async_setup_services(hass)
     async_setup_websocket_api(hass)
@@ -79,6 +81,47 @@ async def async_unload_entry(hass: HomeAssistant, entry: SigurConfigEntry) -> bo
 async def async_reload_entry(hass: HomeAssistant, entry: SigurConfigEntry) -> None:
     """Reload the entry after its options changed."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+@callback
+def _async_purge_excluded_devices(
+    hass: HomeAssistant, entry: SigurConfigEntry, hub: SigurHub
+) -> None:
+    """Delete the devices of access points the user deselected.
+
+    Only points the server still reports but the filter excludes are removed.
+    A point that merely dropped out of ``GETAPLIST`` is left alone, because
+    that is what a temporary discovery failure looks like and it must not
+    destroy the user's automations - see
+    :func:`async_remove_config_entry_device`, which is how those are cleaned
+    up deliberately.
+
+    Removing the device takes its entities with it, which is the point: an
+    excluded access point should leave nothing behind.
+    """
+    if not hub.options.access_points:
+        return
+    excluded = {
+        ap_id
+        for ap_id in hub.discovered_access_points
+        if not hub.options.includes(ap_id)
+    }
+    if not excluded:
+        return
+
+    registry = dr.async_get(hass)
+    identifiers = {
+        (DOMAIN, f"{entry.entry_id}_ap_{ap_id}"): ap_id for ap_id in excluded
+    }
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if not device.identifiers & identifiers.keys():
+            continue
+        _LOGGER.debug(
+            "Sigur (%s): removing the device of deselected access point %s",
+            hub.server_name,
+            next(identifiers[i] for i in device.identifiers if i in identifiers),
+        )
+        registry.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
 
 async def async_remove_config_entry_device(

@@ -1,105 +1,128 @@
-# Changelog
+# История изменений
 
-All notable changes to this project are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
-[semantic versioning](https://semver.org/).
+Здесь описаны все заметные изменения проекта. Формат следует
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), версии —
+[семантические](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.2.0] - unreleased
+## [0.2.0] - 2026-08-31
 
-### Added
+### Добавлено
 
-- A **Sigur** entry in the Home Assistant sidebar. It groups every configured
-  server's access points by zone and shows link state, door position and lock
-  mode on one screen, with a search box and a "problems only" filter for
-  installations with a hundred points.
-- Control straight from a tile - the lock mode and the one-shot entry and exit
-  buttons - shown only while control is enabled for that server; otherwise the
-  tile is read-only and says so.
-- A live event feed beside the tiles, fed from the `sigur_event` bus event.
-- A camera can be attached to an access point, from a gear on its tile
-  (administrators only) or with the `sigur.set_access_point_camera` action for
-  automations and bulk setup. Attaching one does not require the control
-  option, because recording which camera watches a door opens nothing.
-  - A Home Assistant `camera.*` entity is what puts a picture on the tile; the
-    stream stays the responsibility of whichever integration provides it.
-  - A raw RTSP URL can be stored alongside or instead, for automations and for
-    a future camera platform. A browser cannot play RTSP directly, so on its
-    own it displays nothing.
-  - The binding follows its entity: renaming a bound camera rewrites it, and
-    removing the camera clears it while keeping any RTSP URL.
-- The camera frame refreshes the moment an event arrives for that access
-  point, which is when it is worth looking at, and every 30 seconds for tiles
-  that are on screen. Home Assistant only rotates the token inside
-  `entity_picture` every five minutes, so the picture would otherwise be up to
-  that stale; refreshing only visible tiles keeps a hundred access points from
-  meaning a hundred JPEG fetches per tick.
-- A pass direction per access point: both ways, entry only or exit only. OIF
-  reports the zone on each side but never whether the point is one-way, so it
-  is declared by the user rather than guessed from a name - a wrong guess on a
-  control that opens a barrier is not a small thing. A one-way point only
-  offers the button for its direction, and the withdrawn button is removed
-  from the registry instead of lingering as an unavailable entity. The
-  directionless button survives either way, for doors with a single reader.
-  The mode is exposed as a `direction_mode` attribute for automations.
-- `sigur/panel/data` and `sigur/panel/set_binding` websocket commands.
+- Пункт **Sigur** в боковом меню Home Assistant. Он группирует точки доступа
+  всех настроенных серверов по зонам и показывает на одном экране связь,
+  положение двери и режим замка; есть поиск и фильтр «только проблемные» —
+  на установке в сотню точек без него не обойтись.
+- Управление прямо с плитки: режим замка и кнопки разового входа и выхода.
+  Показываются, только если для этого сервера включено управление; иначе
+  плитка доступна лишь для чтения и честно об этом говорит.
+- Живая лента событий рядом с плитками, из события шины `sigur_event`.
+- К точке доступа можно привязать камеру — шестерёнкой на плитке (только для
+  администраторов) или действием `sigur.set_access_point_camera` для
+  автоматизаций и массовой настройки. Включённого управления это не требует:
+  запись о том, какая камера смотрит на дверь, ничего не открывает.
+  - Картинку на плитку даёт сущность `camera.*` Home Assistant; за поток
+    отвечает та интеграция, которая эту камеру предоставляет.
+  - Рядом или вместо неё можно сохранить прямой RTSP-адрес — для автоматизаций
+    и для будущей платформы камеры. Браузер не умеет проигрывать RTSP напрямую,
+    так что сам по себе он ничего не показывает.
+  - Привязка следует за своей сущностью: переименование камеры переписывает
+    привязку, удаление — очищает её, сохраняя RTSP-адрес.
+- Кадр камеры обновляется в момент прихода события по этой точке доступа —
+  именно тогда на него и стоит смотреть, — и раз в 30 секунд для плиток,
+  которые видны на экране. Home Assistant меняет токен внутри `entity_picture`
+  только раз в пять минут, иначе картинка отставала бы на это время; обновление
+  только видимых плиток избавляет от сотни загрузок JPEG за тик на сотне точек.
+- Направление прохода у каждой точки доступа: в обе стороны, только вход или
+  только выход. OIF сообщает зону с каждой стороны, но никогда — односторонняя
+  ли точка, поэтому направление объявляет пользователь, а не угадывает
+  интеграция по названию: ошибка угадывания на элементе, открывающем шлагбаум,
+  — не мелочь. Односторонняя точка предлагает кнопку только своего направления,
+  а снятая кнопка удаляется из реестра, а не остаётся висеть недоступной
+  сущностью. Кнопка без направления остаётся в любом случае — для дверей с
+  одним считывателем. Режим доступен автоматизациям как атрибут
+  `direction_mode`.
+- Команды websocket `sigur/panel/data` и `sigur/panel/set_binding`.
+- Выбор того, какие точки доступа вообще становятся устройствами. Шаг
+  **«Точки доступа»** в параметрах перечисляет всё, что отдаёт сервер, включая
+  уже исключённые точки, а невыбранная точка не получает ни устройства, ни
+  сущностей, ни `GETAPINFO` — на системе в сотню точек это разница между сотней
+  команд за интервал опроса и несколькими. Выбор всех точек не сохраняет
+  фильтра вовсе, поэтому «все» продолжает означать «следовать за сервером», и
+  точка, добавленная в Sigur в следующем месяце, появится сама. Снятие галочки
+  удаляет устройство точки вместе со всем, что на нём есть; точка, просто
+  пропавшая из `GETAPLIST`, не трогается — так выглядит временный сбой
+  обнаружения.
+- Необязательная сущность `cover` на каждое направление прохода — для
+  голосовых помощников. Разовый проход — это `button`, но и Алиса, и Google, и
+  Siri добираются до точки доступа только через *открываемый* объект, а в Home
+  Assistant это `cover`; его открытие отправляет ровно тот же `ALLOWPASS`, что
+  и кнопка. По умолчанию выключено — большинству установок не нужны два
+  элемента управления на одно действие — и подчиняется опции управления по той
+  же причине, что и кнопки. Состояние — реальное положение двери из OIF, а не
+  догадка по последней команде, а из команд предлагается только открытие,
+  потому что точка доступа Sigur закрывается сама.
 
-### Changed
+### Изменено
 
-- The integration now depends on `frontend` and `panel_custom`, which it needs
-  in order to register the panel.
-- The panel's cache-busting token is derived from the module's own contents. A
-  hand-maintained constant is forgotten exactly when the panel changes, and
-  the browser then keeps running the previous module.
-- The panel's static route is registered once per Home Assistant run rather
-  than per panel registration; reloading a config entry raised "route will
-  never be executed" because an aiohttp route cannot be replaced.
+- Интеграция теперь зависит от `frontend` и `panel_custom` — они нужны, чтобы
+  зарегистрировать панель.
+- Токен, сбрасывающий кэш панели, вычисляется из содержимого самого модуля.
+  Константу, которую правят руками, забывают обновить ровно тогда, когда панель
+  изменилась, и браузер продолжает выполнять предыдущий модуль.
+- Статический маршрут панели регистрируется один раз на запуск Home Assistant,
+  а не при каждой регистрации панели: перезагрузка записи конфигурации вызывала
+  «route will never be executed», потому что маршрут aiohttp нельзя заменить.
 
 ## [0.1.0] - 2026-08-28
 
-First release. Implements the Sigur OIF integration protocol, rev. 27.01.2025
+Первый выпуск. Реализует протокол интеграции Sigur OIF, ред. 27.01.2025
 (OIF 1.8, Sigur 1.6.3.14).
 
-### Added
+### Добавлено
 
-- Async OIF client with TLS, custom CA and mutual TLS support, a safe
-  tokenizer for quoted strings and `#NN` escapes, and typed exceptions for all
-  29 documented error codes.
-- Two connections per Sigur server: a serialised command connection and a
-  dedicated event connection, so a long request can never delay or corrupt a
-  pushed event.
-- Config flow with connection validation, duplicate protection, reauth and
-  reconfigure; several Sigur servers can run side by side.
-- Automatic discovery of zones and access points; one Home Assistant device per
-  access point, linked to the server device.
-- `binary_sensor` for link state and door position, `select` for the
-  three-position lock mode, `event` for the last event, and diagnostic sensors.
-- Real-time events through `SUBSCRIBE CE_WITH_NAMES` with automatic fallback to
-  `CE` and to the classic format, published as `sigur_event` with device
-  triggers for every event category.
-- The complete `EVENT_CE` code table (0-93 plus the `256+N`, `512+N`, `768+N`
-  and `1024+N` alarm-panel ranges); unknown codes are published rather than
-  dropped.
-- Bounded, opt-in `GETHISTORY` backfill after a reconnect, with persistent
-  last-event metadata and fingerprint de-duplication.
-- Automatic reconnection with exponential backoff and jitter.
-- `sigur.set_access_point_mode`, `sigur.allow_pass` and `sigur.refresh`, all
-  gated behind an opt-in control option.
-- Optional outbound webhook with HMAC-SHA256 signing, a nonce, a bounded queue
-  and retries; disabled by default.
-- Diagnostics with full redaction of credentials, names and credential numbers,
-  and repair issues for persistent problems.
-- One-shot pass buttons on every access point: "Allow entry" and "Allow exit"
-  send a single `ALLOWPASS` without changing the access point's mode. A third,
-  directionless button is available but disabled by default. The buttons only
-  exist while control is enabled, so a button that would always refuse is never
-  shown.
-- Access object ids and names are withheld from entities, bus events,
-  diagnostics and the webhook unless the personal-data option is enabled, and
-  credential numbers are always masked.
-- Russian and English translations, with error messages that follow the Home
-  Assistant language.
+- Асинхронный клиент OIF с поддержкой TLS, собственного удостоверяющего центра
+  и взаимной аутентификации, безопасным разбором строк в кавычках и escape-
+  последовательностей `#NN`, а также типизированными исключениями для всех 29
+  документированных кодов ошибок.
+- Два соединения на сервер Sigur: сериализованное командное и отдельное
+  событийное, чтобы длинный запрос никогда не задержал и не испортил
+  присланное событие.
+- Мастер настройки с проверкой подключения, защитой от дублей, повторной
+  аутентификацией и сменой адреса; несколько серверов Sigur могут работать
+  одновременно.
+- Автоматическое обнаружение зон и точек доступа; отдельное устройство Home
+  Assistant на каждую точку доступа, привязанное к устройству-серверу.
+- `binary_sensor` для связи и положения двери, `select` для трёхпозиционного
+  режима замка, `event` для последнего события и диагностические сенсоры.
+- События в реальном времени через `SUBSCRIBE CE_WITH_NAMES` с автоматическим
+  откатом на `CE` и на классический формат; публикуются как `sigur_event` с
+  триггерами устройств для каждой категории событий.
+- Полная таблица кодов `EVENT_CE` (0–93 плюс диапазоны приборов охраны `256+N`,
+  `512+N`, `768+N` и `1024+N`); неизвестные коды публикуются, а не отбрасываются.
+- Ограниченное восстановление истории через `GETHISTORY` после переподключения,
+  по желанию, с сохраняемыми метаданными последнего события и дедупликацией по
+  отпечаткам.
+- Автоматическое переподключение с экспоненциально растущей паузой и случайным
+  разбросом.
+- Действия `sigur.set_access_point_mode`, `sigur.allow_pass` и `sigur.refresh`,
+  все — за опцией управления, которую нужно включить отдельно.
+- Необязательный исходящий webhook с подписью HMAC-SHA256, одноразовым числом,
+  ограниченной очередью и повторами; по умолчанию выключен.
+- Диагностика с полным маскированием учётных данных, имён и номеров
+  идентификаторов, а также уведомления о проблемах для устойчивых неполадок.
+- Кнопки разового прохода на каждой точке доступа: «Разрешить вход» и
+  «Разрешить выход» отправляют один `ALLOWPASS`, не меняя режим точки. Третья
+  кнопка, без направления, есть, но по умолчанию выключена. Кнопки существуют,
+  только пока включено управление, — кнопка, которая гарантированно откажет, не
+  показывается никогда.
+- Идентификаторы и имена объектов доступа не попадают ни в сущности, ни в
+  события шины, ни в диагностику, ни в webhook, пока не включена опция
+  персональных данных; номера идентификаторов маскируются всегда.
+- Русский и английский переводы, с сообщениями об ошибках на языке Home
+  Assistant.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0

@@ -27,6 +27,7 @@ CONF_OIF_VERSION: Final = "oif_version"
 
 OPT_SCAN_INTERVAL: Final = "scan_interval"
 OPT_ENABLE_CONTROL: Final = "enable_control"
+OPT_ENABLE_PASS_COVERS: Final = "enable_pass_covers"
 OPT_ENABLE_PERSONAL_DATA: Final = "enable_personal_data"
 OPT_RESOLVE_OBJECT_NAMES: Final = "resolve_object_names"
 OPT_ENABLE_BACKFILL: Final = "enable_backfill"
@@ -41,6 +42,9 @@ OPT_WEBHOOK_TIMEOUT: Final = "webhook_timeout"
 OPT_WEBHOOK_CATEGORIES: Final = "webhook_categories"
 OPT_WEBHOOK_ALLOW_INSECURE: Final = "webhook_allow_insecure"
 OPT_WEBHOOK_INCLUDE_NAMES: Final = "webhook_include_names"
+#: Access point ids the user picked. Empty means "whatever the server
+#: reports", so a point added in Sigur later still appears by itself.
+OPT_ACCESS_POINTS: Final = "access_points"
 
 # --- Defaults ---------------------------------------------------------------
 
