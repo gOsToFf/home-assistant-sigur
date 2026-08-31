@@ -6,6 +6,27 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-31
+
+### Исправлено
+
+- Сущность-«открывашка» приезжала в Яндекс безымянной, и Алиса подписывала её
+  названием типа — «Открывающее устройство». Разобрать так десяток точек
+  доступа, а тем более сотню, невозможно. В 0.2.1 имя составлялось из имени
+  устройства по соглашению `has_entity_name`, из-за чего собственное имя
+  сущности в реестре оставалось пустым (`original_name = None`), и мост,
+  который читает реестр, а не состояние, отдавал устройство без имени. Теперь
+  `cover` объявляет имя точки доступа явно, и его видно с обеих сторон.
+  `entity_id` и отображаемое имя не изменились.
+
+### Изменено
+
+- `brand/NOTICE.md` больше не утверждает, что HACS откатывается на копии
+  картинок в репозитории. И Home Assistant, и HACS берут изображения
+  интеграции только из `brands.home-assistant.io`, а для незарегистрированного
+  домена он отдаёт заглушку. Домен `sigur` там не зарегистрирован — это и есть
+  причина отсутствующего логотипа, и лечится она только регистрацией.
+
 ## [0.2.1] - 2026-08-31
 
 ### Изменено
@@ -145,7 +166,8 @@
 - Русский и английский переводы, с сообщениями об ошибках на языке Home
   Assistant.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.2
 [0.2.1]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.1
 [0.2.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0

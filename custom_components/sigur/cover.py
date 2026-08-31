@@ -17,9 +17,15 @@ no direction, and a cover per direction would only make the assistant ask
 which of two identical doors was meant. ``ALLOWPASS ... UNKNOWN`` leaves that
 decision to Sigur, which is the one that knows how the point is wired.
 
-Being the only cover, it is also the access point's primary entity - its name
-is the access point's own, so an assistant hears "Въезд 1" rather than
-"Въезд 1 Проход".
+Being the only cover, it carries the access point's own name, so an assistant
+hears "Въезд 1" rather than "Въезд 1 Проход". It states that name outright
+rather than inheriting it from the device through ``has_entity_name``, which
+is the usual way and was how 0.2.1 did it. The convention leaves the entity's
+own name empty and composes the displayed one at render time; a bridge that
+reads the registry instead of the state then finds nothing and hands the
+assistant a nameless device, which Yandex labels with the device type. Every
+access point arriving as "Открывающее устройство" is not a trade worth making
+for convention, so the name is set here and both readings see it.
 
 The state is the real door position reported by OIF, not a guess from the last
 command. A pass authorises an opening; whether the door then opened is
@@ -101,9 +107,11 @@ class SigurPassCover(SigurAccessPointEntity, CoverEntity):
 
     _attr_device_class = CoverDeviceClass.DOOR
 
-    # The access point's primary entity: it carries the device's own name
-    # rather than a suffixed one, which is what a voice assistant repeats back.
-    _attr_name = None
+    # The name is this entity's own rather than the device's, so that it is
+    # stored in the entity registry as well as rendered into the state. See
+    # the module docstring: voice assistants reach this entity through a
+    # bridge, and not every bridge reads the name from the same place.
+    _attr_has_entity_name = False
 
     # Opening is the only thing a pass can do. A Sigur access point closes on
     # its own, and claiming a close command this integration cannot honour
@@ -113,6 +121,17 @@ class SigurPassCover(SigurAccessPointEntity, CoverEntity):
     def __init__(self, coordinator: SigurDataUpdateCoordinator, ap_id: int) -> None:
         """Create the pass cover for ``ap_id``."""
         super().__init__(coordinator, ap_id, COVER_KEY)
+
+    @property
+    def name(self) -> str:
+        """The access point's own name, and nothing appended to it.
+
+        A property rather than a fixed attribute so that renaming the access
+        point in Sigur reaches the entity on the next reload; the registry
+        keeps whatever this returned when the entity was first added, which is
+        exactly the value a bridge needs to find there.
+        """
+        return self.ap_state.name
 
     @property
     def is_closed(self) -> bool | None:

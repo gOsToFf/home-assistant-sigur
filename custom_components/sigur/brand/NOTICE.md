@@ -13,7 +13,10 @@ holder asks for these assets to be removed, replace them with a neutral mark —
 nothing in the integration depends on their content.
 
 The canonical home for these files is the
-[home-assistant/brands](https://github.com/home-assistant/brands) repository.
-Registering the `sigur` domain there makes the logo appear throughout Home
-Assistant, not just in HACS; until that happens, HACS falls back to the copies
-in this directory.
+[home-assistant/brands](https://github.com/home-assistant/brands) repository,
+and it is the only home that has any effect. Both Home Assistant and HACS
+resolve an integration's images from `brands.home-assistant.io/_/<domain>/`,
+which serves a generic placeholder for every domain that is not registered
+there; `sigur` is not, so that placeholder is what a user sees. Nothing reads
+the copies in this directory - they are kept here so that the registration can
+be raised from the repository itself, not because they are served from it.
