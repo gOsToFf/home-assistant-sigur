@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-09-01
+
 ### Изменено
 
 - Тесты идут на актуальной Home Assistant. Образ собирался на Python 3.13, а
@@ -183,7 +185,8 @@
 - Русский и английский переводы, с сообщениями об ошибках на языке Home
   Assistant.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.5
 [0.2.4]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.4
 [0.2.3]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.3
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0
