@@ -12,11 +12,20 @@ affiliated with or endorsed by them, and the README says so. If the trademark
 holder asks for these assets to be removed, replace them with a neutral mark —
 nothing in the integration depends on their content.
 
-The canonical home for these files is the
-[home-assistant/brands](https://github.com/home-assistant/brands) repository,
-and it is the only home that has any effect. Both Home Assistant and HACS
-resolve an integration's images from `brands.home-assistant.io/_/<domain>/`,
-which serves a generic placeholder for every domain that is not registered
-there; `sigur` is not, so that placeholder is what a user sees. Nothing reads
-the copies in this directory - they are kept here so that the registration can
-be raised from the repository itself, not because they are served from it.
+This directory is where Home Assistant itself looks. Since 2026.3 a custom
+integration ships its brand images with its own code, in exactly this layout,
+and they take priority over the brands CDN with no further configuration - see
+the [Brands Proxy API announcement](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api).
+The `custom_integrations` folder of the
+[home-assistant/brands](https://github.com/home-assistant/brands) repository is
+marked legacy for that reason, so registering `sigur` there is no longer the
+way to be seen inside Home Assistant.
+
+Two things this does not cover:
+
+- Home Assistant older than 2026.3 has no local lookup and falls back to the
+  CDN, which serves a placeholder for an unregistered domain. `hacs.json`
+  declares 2026.2.0 as the minimum, so that window exists.
+- HACS builds the CDN URL itself (`hacs/update.py`), so its own screens show
+  the placeholder whatever this directory holds. Only a brands registration
+  changes what HACS displays.
