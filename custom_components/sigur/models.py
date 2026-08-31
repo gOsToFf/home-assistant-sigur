@@ -29,8 +29,17 @@ class AccessPointState:
 
     @property
     def name(self) -> str:
-        """Access point name, falling back to its id."""
-        return self.info.name if self.info else f"AP {self.id}"
+        """Access point name, falling back to its id.
+
+        A blank name is treated as no name at all. OIF does not promise that
+        ``APINFO`` carries one, and an empty string is worse than the fallback
+        everywhere it lands: it names the device and the entity, and it is
+        stored in the entity registry, where anything reading the registry
+        rather than the state - a voice assistant bridge, for one - then finds
+        nothing to show.
+        """
+        name = self.info.name.strip() if self.info else ""
+        return name or f"AP {self.id}"
 
     @property
     def state(self) -> ApState | None:

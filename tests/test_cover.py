@@ -237,3 +237,28 @@ async def test_a_refused_pass_surfaces_as_an_error(hass: HomeAssistant) -> None:
         assert excinfo.value.translation_key == "allow_pass_failed"
     finally:
         await fake.stop()
+
+
+async def test_a_blank_name_from_the_server_never_reaches_the_registry(
+    hass: HomeAssistant,
+) -> None:
+    """OIF does not promise a name, and a blank one poisons everything downstream.
+
+    It would name the device and the entity, and land in the entity registry
+    as the entity's stored name, where a bridge reading the registry rather
+    than the state finds nothing to show.
+    """
+    fake = FakeSigurServer(access_points=[FakeAccessPoint(1, "   ")])
+    await fake.start()
+    try:
+        entry = await _setup(hass, fake, options=COVERS_ON)
+        registry = er.async_get(hass)
+        item = registry.async_get_entity_id(
+            "cover", DOMAIN, f"{entry.entry_id}_1_pass_cover"
+        )
+        assert item is not None
+        entity = registry.async_get(item)
+        assert entity.original_name == "AP 1"
+        assert hass.states.get(item).attributes["friendly_name"] == "AP 1"
+    finally:
+        await fake.stop()
