@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-31
+
 ### Исправлено
 
 - Пустое имя точки доступа больше не расходится по системе. OIF не обещает,
@@ -146,6 +148,7 @@
 - Русский и английский переводы, с сообщениями об ошибках на языке Home
   Assistant.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.4
 [0.2.3]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.3
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0
