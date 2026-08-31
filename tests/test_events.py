@@ -55,7 +55,19 @@ def _capture(hass: HomeAssistant) -> list[Event]:
 
 
 async def _push(hass: HomeAssistant, fake: FakeSigurServer, event: FakeEvent) -> None:
-    """Push an event and let the pipeline drain."""
+    """Push an event and let the pipeline drain.
+
+    The subscription has to exist first: a server that only speaks the classic
+    ``SUBSCRIBE`` refuses two newer modes before the client settles, and an
+    event pushed during that exchange has nobody to go to. Waiting for the
+    subscriber makes the test wait for the thing it is actually testing rather
+    than for the machine to be fast enough.
+    """
+    for _ in range(100):
+        if fake.subscriber_count:
+            break
+        await asyncio.sleep(0.01)
+        await hass.async_block_till_done()
     await fake.push_event(event)
     for _ in range(5):
         await asyncio.sleep(0)
@@ -314,8 +326,8 @@ async def test_device_triggers_are_offered_for_access_points(
 
     assert await async_setup_component(hass, "device_automation", {})
     entry = await _setup(hass, server)
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, f"{entry.entry_id}_ap_1")}
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, f"{entry.entry_id}_ap_1"), entry.entry_id
     )
     assert device is not None
 
@@ -348,8 +360,8 @@ async def test_device_trigger_fires_an_automation(
     """A device trigger only fires for its own access point and category."""
     assert await async_setup_component(hass, "device_automation", {})
     entry = await _setup(hass, server)
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, f"{entry.entry_id}_ap_1")}
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, f"{entry.entry_id}_ap_1"), entry.entry_id
     )
     assert device is not None
 

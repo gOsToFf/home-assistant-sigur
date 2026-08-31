@@ -17,6 +17,9 @@ testpaths = ["tests"]
 norecursedirs = [".git", ".venv", "docs", "scripts"]
 
 [tool.ruff]
+# Deliberately behind the interpreter the tests run on. Home Assistant needs
+# 3.14, but hacs.json still admits Home Assistant 2026.2, which runs 3.13 -
+# and the 3.14 syntax ruff would otherwise introduce is a syntax error there.
 target-version = "py313"
 line-length = 88
 
@@ -64,7 +67,7 @@ force-sort-within-sections = true
 known-first-party = ["custom_components"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 warn_unused_ignores = false
 disallow_untyped_decorators = false

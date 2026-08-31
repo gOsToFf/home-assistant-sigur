@@ -16,7 +16,11 @@ import logging
 from pathlib import Path
 
 from homeassistant.components import frontend, panel_custom
-from homeassistant.components.http import StaticPathConfig
+
+# Imported from the module that defines it: `homeassistant.components.http`
+# re-exports the name at runtime but does not list it in `__all__`, so the
+# shorter import is not part of the promised interface.
+from homeassistant.components.http.server import StaticPathConfig
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, PANEL_ICON, PANEL_TITLE, PANEL_URL_PATH

@@ -11,7 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.13"
+  # Load bearing: Home Assistant 2026.8 requires 3.14.2 and the test harness
+  # requires 3.14. On an older interpreter the resolver quietly settles on the
+  # newest combination that fits, and the suite then tests a Home Assistant
+  # months behind what users run - without failing, which is the dangerous part.
+  PYTHON_VERSION: "3.14"
 
 jobs:
   lint:

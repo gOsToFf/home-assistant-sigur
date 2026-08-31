@@ -70,7 +70,13 @@ class SigurAccessPointEntity(CoordinatorEntity[SigurDataUpdateCoordinator]):
             name=self.ap_state.name,
             manufacturer=MANUFACTURER,
             model=ACCESS_POINT_MODEL,
-            via_device=hub_device_identifier(entry_id),
+            # Deprecated in favour of `via_device_id` and dropped from the
+            # DeviceInfo type in 2026.9, but that key does not exist in any
+            # Home Assistant released so far - 2026.8.3 still has only this
+            # one, and hacs.json admits 2026.2. Switching now would break
+            # every install that exists to satisfy a beta's type stub.
+            # Home Assistant keeps accepting it until 2027.8.
+            via_device=hub_device_identifier(entry_id),  # type: ignore[typeddict-unknown-key]
         )
 
     @property

@@ -6,6 +6,25 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-09-01
+
+### Изменено
+
+- Тесты идут на актуальной Home Assistant. Образ собирался на Python 3.13, а
+  Home Assistant 2026.8 требует 3.14 — резолвер молча брал последнюю связку,
+  влезающую в 3.13, и проверял версию полугодовой давности. Ничего не падало,
+  поэтому и не замечалось. Теперь Python 3.14 и в образе, и в CI.
+- Тесты используют `async_get_device_by_identifier` вместо
+  `async_get_device`, который на новой Home Assistant бросает исключение:
+  идентификаторы устройств больше не уникальны между записями конфигурации.
+- Фейковый сервер OIF прибирает за собой: обработчики соединений отменяются
+  при остановке (иначе подвисший на `hang_commands` жил дольше теста), а шум
+  от намеренно проваленного TLS-рукопожатия больше не засчитывается тесту.
+  Остановка ограничена по времени и не может подвесить прогон.
+- Тест событий ждёт установленной подписки, а не удачного тайминга: сервер,
+  умеющий только классический `SUBSCRIBE`, отвергает два режима, и событие,
+  отправленное в это окно, уходило в никуда.
+
 ### Изменено
 
 - `brand/NOTICE.md` описывает, как логотип работает на самом деле. В 0.2.3 я
@@ -166,7 +185,8 @@
 - Русский и английский переводы, с сообщениями об ошибках на языке Home
   Assistant.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.5
 [0.2.4]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.4
 [0.2.3]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.3
 [0.1.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.1.0
