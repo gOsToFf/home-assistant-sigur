@@ -190,13 +190,14 @@ class SigurOptions:
 def _parse_access_points(raw: object) -> frozenset[int]:
     """Read the selected access point ids, ignoring anything unparseable.
 
-    The selector hands back strings, and an id that no longer exists on the
-    server is harmless here - it simply never matches.
+    Options are stored as JSON, so the selection arrives as a list of strings;
+    anything else means the option was never set. An id that no longer exists
+    on the server is harmless here - it simply never matches.
     """
-    if not raw:
+    if not isinstance(raw, list | tuple):
         return frozenset()
     selected: set[int] = set()
-    for value in raw:  # type: ignore[union-attr]
+    for value in raw:
         try:
             selected.add(int(value))
         except (TypeError, ValueError):
