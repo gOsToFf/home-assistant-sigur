@@ -21,7 +21,6 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
-import voluptuous as vol
 
 from .api import (
     DEFAULT_OIF_VERSION,
@@ -42,6 +41,7 @@ from .api import (
     create_ssl_context,
 )
 from .api.event_codes import EventCategory
+from .compat import vol
 from .const import (
     CONF_CA_BUNDLE,
     CONF_CLIENT_CERTIFICATE,

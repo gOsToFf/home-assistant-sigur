@@ -17,10 +17,10 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-import voluptuous as vol
 
 from .api import ANONYMOUS, ApMode, Direction, SigurError
 from .bindings import DirectionMode
+from .compat import vol
 from .const import (
     ATTR_CAMERA_ENTITY_ID,
     ATTR_CONFIRM_ALL,

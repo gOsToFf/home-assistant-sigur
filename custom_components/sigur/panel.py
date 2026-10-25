@@ -17,10 +17,13 @@ from pathlib import Path
 
 from homeassistant.components import frontend, panel_custom
 
-# Imported from the module that defines it: `homeassistant.components.http`
-# re-exports the name at runtime but does not list it in `__all__`, so the
-# shorter import is not part of the promised interface.
-from homeassistant.components.http.server import StaticPathConfig
+# Imported from the package, not from `http.server`: that module only exists in
+# newer releases, and on the oldest supported Home Assistant the class is
+# defined in the package itself. Newer releases still re-export it there, just
+# without listing it in `__all__`, which is all the ignore is about.
+from homeassistant.components.http import (  # type: ignore[attr-defined]
+    StaticPathConfig,
+)
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, PANEL_ICON, PANEL_TITLE, PANEL_URL_PATH

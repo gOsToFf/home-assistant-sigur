@@ -74,5 +74,5 @@ disallow_untyped_decorators = false
 files = ["custom_components/sigur"]
 
 [[tool.mypy.overrides]]
-module = ["homeassistant.*", "voluptuous.*"]
+module = ["homeassistant.*", "probatio.*", "voluptuous.*"]
 ignore_missing_imports = true

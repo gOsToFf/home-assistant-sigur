@@ -22,9 +22,9 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.trigger import TriggerActionType, TriggerInfo
 from homeassistant.helpers.typing import ConfigType
-import voluptuous as vol
 
 from .api.event_codes import EventCategory
+from .compat import vol
 from .const import DOMAIN, EVENT_SIGUR
 
 #: Categories offered as device triggers, in the order shown in the UI.
