@@ -7,6 +7,15 @@ description: >-
   relaxing a hard pin needs a real override: pip's -c only constrains, it
   cannot loosen, so uv is used here and in scripts/Dockerfile.tests alike.
 
+inputs:
+  harness-version:
+    description: >-
+      Exact pytest-homeassistant-custom-component version to install. Each one
+      pins one Home Assistant release, so this is how a job picks the Home
+      Assistant it tests against. Empty means the newest.
+    required: false
+    default: ""
+
 runs:
   using: composite
   steps:
@@ -16,11 +25,13 @@ runs:
 
     - name: Install the test harness
       shell: bash
+      env:
+        HARNESS_VERSION: ${{ inputs.harness-version }}
       run: |
         printf 'lru-dict==1.4.1\n' > "${RUNNER_TEMP}/overrides.txt"
         uv pip install --system \
           --overrides "${RUNNER_TEMP}/overrides.txt" \
-          pytest-homeassistant-custom-component
+          "pytest-homeassistant-custom-component${HARNESS_VERSION:+==${HARNESS_VERSION}}"
 
     - name: Install the frontend package
       shell: bash

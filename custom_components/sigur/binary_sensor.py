@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from homeassistant.components.binary_sensor import (
+# Newer releases define the device class in `binary_sensor.const` and only
+# re-export it here, without an `__all__` entry; on the oldest supported
+# release that module does not exist yet. The package import works on both.
+from homeassistant.components.binary_sensor import (  # type: ignore[attr-defined]
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )

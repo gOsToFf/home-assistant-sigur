@@ -7,8 +7,8 @@ from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 import pytest
-import voluptuous as vol
 
+from custom_components.sigur.compat import vol
 from custom_components.sigur.const import (
     DOMAIN,
     OPT_ENABLE_CONTROL,

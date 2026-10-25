@@ -20,9 +20,9 @@ from homeassistant.components.websocket_api.decorators import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-import voluptuous as vol
 
 from .bindings import DirectionMode
+from .compat import vol
 from .const import DOMAIN
 from .registry_watch import async_notify_panel
 from .runtime import SigurConfigEntry

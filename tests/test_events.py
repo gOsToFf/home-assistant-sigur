@@ -21,7 +21,7 @@ from custom_components.sigur.const import (
 
 from .conftest import requires_home_assistant
 from .fake_oif_server import FakeBehaviour, FakeEvent, FakeSigurServer
-from .helpers import make_entry
+from .helpers import device_by_identifier, make_entry
 
 pytestmark = requires_home_assistant
 
@@ -326,8 +326,8 @@ async def test_device_triggers_are_offered_for_access_points(
 
     assert await async_setup_component(hass, "device_automation", {})
     entry = await _setup(hass, server)
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, f"{entry.entry_id}_ap_1"), entry.entry_id
+    device = device_by_identifier(
+        dr.async_get(hass), (DOMAIN, f"{entry.entry_id}_ap_1"), entry.entry_id
     )
     assert device is not None
 
@@ -360,8 +360,8 @@ async def test_device_trigger_fires_an_automation(
     """A device trigger only fires for its own access point and category."""
     assert await async_setup_component(hass, "device_automation", {})
     entry = await _setup(hass, server)
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, f"{entry.entry_id}_ap_1"), entry.entry_id
+    device = device_by_identifier(
+        dr.async_get(hass), (DOMAIN, f"{entry.entry_id}_ap_1"), entry.entry_id
     )
     assert device is not None
 
