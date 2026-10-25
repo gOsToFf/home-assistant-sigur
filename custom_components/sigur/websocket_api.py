@@ -5,10 +5,17 @@ not the parts that make the view readable: which access points belong to which
 zone, which server they came from, and which entity is which. Rather than have
 the frontend rebuild that from the entity registry, the backend hands it over
 in one shot; live values then come from the states the panel already receives.
+
+What a user is handed depends on the presets assigned to them, and that is
+decided here rather than in the browser: data a user is not meant to see is
+never sent. Events reach the panel through a subscription of its own for the
+same reason, and because Home Assistant does not let a non-admin subscribe to
+an integration's bus events at all.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.components.websocket_api import async_register_command
@@ -18,12 +25,15 @@ from homeassistant.components.websocket_api.decorators import (
     require_admin,
     websocket_command,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.components.websocket_api.messages import event_message
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
 from .bindings import DirectionMode
 from .compat import vol
-from .const import DOMAIN
+from .const import DOMAIN, EVENT_SIGUR, PANEL_DATA_CHANGED
+from .models import AccessPointState
+from .presets import Access, async_get_presets
 from .registry_watch import async_notify_panel
 from .runtime import SigurConfigEntry
 
@@ -52,7 +62,41 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
         return
     hass.data[_REGISTERED] = True
     async_register_command(hass, ws_panel_data)
+    async_register_command(hass, ws_panel_subscribe)
     async_register_command(hass, ws_set_binding)
+    async_register_command(hass, ws_save_preset)
+    async_register_command(hass, ws_delete_preset)
+
+
+def _zone_of(state: AccessPointState | None) -> int | None:
+    """The zone on the A side of an access point, which presets go by."""
+    return state.info.zone_a if state is not None and state.info else None
+
+
+@callback
+def _event_allowed(
+    hass: HomeAssistant, access: Access, data: Mapping[str, Any]
+) -> bool:
+    """Whether a `sigur_event` payload is for an access point the user may see.
+
+    An event with no access point - the server itself lost its link - is shown
+    to anyone who may see at least one point of that server.
+    """
+    if not access.restricted:
+        return True
+    entry_id = data.get("server_entry_id")
+    entry = hass.config_entries.async_get_entry(entry_id) if entry_id else None
+    runtime = getattr(entry, "runtime_data", None) if entry else None
+    if entry_id is None or runtime is None:
+        return False
+    points = runtime.hub.access_points
+    ap_id = data.get("access_point_id")
+    if ap_id is None:
+        return any(
+            access.allows(entry_id, point_id, _zone_of(state))
+            for point_id, state in points.items()
+        )
+    return access.allows(entry_id, ap_id, _zone_of(points.get(ap_id)))
 
 
 def _loaded_entries(hass: HomeAssistant) -> list[SigurConfigEntry]:
@@ -94,7 +138,11 @@ async def ws_panel_data(
     connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Describe every configured Sigur server, zone and access point."""
+    """Describe the servers, zones and access points this user may see."""
+    store = await async_get_presets(hass)
+    user = connection.user
+    access = store.access_for(user)
+
     servers: list[dict[str, Any]] = []
     for entry in _loaded_entries(hass):
         runtime = entry.runtime_data
@@ -104,6 +152,8 @@ async def ws_panel_data(
 
         access_points: list[dict[str, Any]] = []
         for ap_id, state in sorted(hub.access_points.items()):
+            if not access.allows(entry.entry_id, ap_id, _zone_of(state)):
+                continue
             binding = bindings.get(ap_id)
             access_points.append(
                 {
@@ -120,10 +170,16 @@ async def ws_panel_data(
                     ),
                     "entities": entities.get(ap_id, {}),
                     "camera_entity_id": binding.camera_entity_id,
-                    "rtsp_url": binding.rtsp_url,
+                    # Stream URLs usually carry the camera's login and
+                    # password, and only the admin editor needs them.
+                    "rtsp_url": binding.rtsp_url if user.is_admin else None,
                     "direction_mode": binding.direction_mode.value,
                 }
             )
+
+        if access.restricted and not access_points:
+            # Not even the server's name is the user's business then.
+            continue
 
         servers.append(
             {
@@ -145,7 +201,57 @@ async def ws_panel_data(
             }
         )
 
-    connection.send_result(msg["id"], {"servers": servers})
+    connection.send_result(
+        msg["id"],
+        {
+            "servers": servers,
+            "presets": [
+                preset.as_dict() if user.is_admin else preset.as_public_dict()
+                for preset in access.presets
+            ],
+            "restricted": access.restricted,
+        },
+    )
+
+
+@websocket_command({vol.Required("type"): "sigur/panel/subscribe"})
+@async_response
+async def ws_panel_subscribe(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Stream the events this user may see, and say when the data changed.
+
+    Access is worked out again for every event rather than once: presets can
+    be edited while the panel is open, and the change applies at once.
+    """
+    store = await async_get_presets(hass)
+    user = connection.user
+
+    @callback
+    def forward_event(event: Event) -> None:
+        if _event_allowed(hass, store.access_for(user), event.data):
+            connection.send_message(
+                event_message(msg["id"], {"type": "event", "event": event.data})
+            )
+
+    @callback
+    def forward_change(event: Event) -> None:
+        connection.send_message(event_message(msg["id"], {"type": "changed"}))
+
+    unsubscribers = [
+        hass.bus.async_listen(EVENT_SIGUR, forward_event),
+        hass.bus.async_listen(PANEL_DATA_CHANGED, forward_change),
+    ]
+
+    @callback
+    def unsubscribe() -> None:
+        for unsubscriber in unsubscribers:
+            unsubscriber()
+
+    connection.subscriptions[msg["id"]] = unsubscribe
+    connection.send_result(msg["id"])
 
 
 @websocket_command(
@@ -197,3 +303,78 @@ async def ws_set_binding(
         # Which pass buttons exist is decided when the platform is set up, so
         # the entry has to be reloaded for the change to take effect.
         hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
+
+
+#: Keys look like `entry_id:number`; anything else would match nothing anyway.
+_KEY = vol.Match(r"^[^:]+:\d+$")
+
+
+@websocket_command(
+    {
+        vol.Required("type"): "sigur/presets/save",
+        vol.Optional("preset_id"): vol.Any(str, None),
+        vol.Required("name"): str,
+        vol.Optional("access_points", default=list): [_KEY],
+        vol.Optional("zones", default=list): [_KEY],
+        vol.Optional("users", default=list): [str],
+    }
+)
+@require_admin
+@async_response
+async def ws_save_preset(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Create a preset, or replace an existing one."""
+    store = await async_get_presets(hass)
+    name = msg["name"].strip()
+    if not name:
+        connection.send_error(msg["id"], "invalid_format", "A preset needs a name")
+        return
+
+    preset_id = msg.get("preset_id")
+    if preset_id and store.get(preset_id) is None:
+        connection.send_error(msg["id"], "not_found", f"Unknown preset {preset_id}")
+        return
+
+    for user_id in msg["users"]:
+        if await hass.auth.async_get_user(user_id) is None:
+            connection.send_error(
+                msg["id"], "invalid_format", f"Unknown user {user_id}"
+            )
+            return
+
+    preset = await store.async_save(
+        preset_id=preset_id,
+        name=name,
+        access_points=msg["access_points"],
+        zones=msg["zones"],
+        users=msg["users"],
+    )
+    async_notify_panel(hass)
+    connection.send_result(msg["id"], preset.as_dict())
+
+
+@websocket_command(
+    {
+        vol.Required("type"): "sigur/presets/delete",
+        vol.Required("preset_id"): str,
+    }
+)
+@require_admin
+@async_response
+async def ws_delete_preset(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete a preset."""
+    store = await async_get_presets(hass)
+    if not await store.async_delete(msg["preset_id"]):
+        connection.send_error(
+            msg["id"], "not_found", f"Unknown preset {msg['preset_id']}"
+        )
+        return
+    async_notify_panel(hass)
+    connection.send_result(msg["id"])

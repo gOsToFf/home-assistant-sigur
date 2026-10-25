@@ -9,11 +9,16 @@
  *
  * Structure comes from the `sigur/panel/data` websocket command; live values
  * come from `hass.states`, which the panel is handed on every state change.
+ * Events and "the structure changed" both arrive through the integration's own
+ * `sigur/panel/subscribe` stream, which already leaves out whatever this user
+ * is not meant to see - and which, unlike the bus, a non-admin may subscribe to.
  */
 
-const EVENT_TYPE = "sigur_event";
-/** Fired by the integration when the structure this panel caches changed. */
-const DATA_CHANGED_EVENT = "sigur_panel_data_changed";
+/**
+ * Where the chosen preset is remembered: Home Assistant's per-user frontend
+ * data, so it follows the user from the phone to the desktop.
+ */
+const USER_DATA_KEY = "sigur-panel";
 /** Coalesce bursts of registry changes into one reload. */
 const RELOAD_DEBOUNCE_MS = 400;
 /**
@@ -166,6 +171,14 @@ class SigurPanel extends HTMLElement {
     this._filter = "";
     this._onlyProblems = false;
     this._selection = loadSelection();
+    this._shown = this._selection;
+    this._presets = [];
+    this._restricted = false;
+    this._activePreset = null;
+    this._basePreset = null;
+    this._users = null;
+    this._usersRequest = null;
+    this._confirmDelete = false;
     this._pickerOpen = false;
     this._isAdmin = false;
     this._editing = null;
@@ -182,7 +195,7 @@ class SigurPanel extends HTMLElement {
     this._hass = hass;
     this._isAdmin = hass.user?.is_admin ?? false;
     if (first) {
-      this._load();
+      this._loadUserData().then(() => this._load());
       this._subscribe();
     } else if (this._loaded) {
       // Structure is unchanged; only the live values need repainting.
@@ -218,37 +231,77 @@ class SigurPanel extends HTMLElement {
     try {
       const result = await this._hass.callWS({ type: "sigur/panel/data" });
       this._servers = result.servers ?? [];
+      this._presets = result.presets ?? [];
+      this._restricted = Boolean(result.restricted);
       this._error = null;
     } catch (err) {
       this._error = err?.message ?? String(err);
     }
+    if (
+      this._activePreset &&
+      !this._presets.some((preset) => preset.id === this._activePreset)
+    ) {
+      // Deleted, or no longer assigned to this user.
+      this._activePreset = null;
+    }
+    if (!this._presets.some((preset) => preset.id === this._basePreset)) {
+      this._basePreset = null;
+    }
+    this._updateShown();
     this._loaded = true;
     this._render();
   }
 
+  /** Read which preset this user had chosen, wherever they chose it. */
+  async _loadUserData() {
+    try {
+      const result = await this._hass.callWS({
+        type: "frontend/get_user_data",
+        key: USER_DATA_KEY,
+      });
+      this._activePreset = result?.value?.preset ?? null;
+    } catch {
+      // Starts on "all", which is all that is lost.
+    }
+  }
+
+  _saveUserData() {
+    this._hass
+      .callWS({
+        type: "frontend/set_user_data",
+        key: USER_DATA_KEY,
+        value: { preset: this._activePreset },
+      })
+      .catch(() => undefined);
+  }
+
   _subscribe() {
     this._subscriptions.push(
-      this._hass.connection.subscribeEvents((event) => {
-        this._feed = [event.data, ...this._feed].slice(0, FEED_BUFFER);
-        this._paintFeed();
-        // Something happened at this door, which is exactly when its camera
-        // is worth looking at. Refetch that frame now rather than waiting.
-        const { server_entry_id: entry, access_point_id: ap } = event.data;
-        if (entry != null && ap != null) {
-          this._refreshCamera(`${entry}:${ap}`);
-        }
-      }, EVENT_TYPE),
-    );
-
-    // The structure is cached, so anything that invalidates it has to say so.
-    // A renamed camera entity is the case that bites: the tile would go on
-    // requesting a picture from an entity id that no longer resolves.
-    this._subscriptions.push(
-      this._hass.connection.subscribeEvents(
-        () => this._scheduleReload(),
-        DATA_CHANGED_EVENT,
+      this._hass.connection.subscribeMessage(
+        (message) => {
+          if (message.type === "changed") {
+            // The structure is cached, so anything that invalidates it has to
+            // say so: a renamed camera, an edited binding, a changed preset.
+            this._scheduleReload();
+            return;
+          }
+          const event = message.event;
+          this._feed = [event, ...this._feed].slice(0, FEED_BUFFER);
+          this._paintFeed();
+          // Something happened at this door, which is exactly when its camera
+          // is worth looking at. Refetch that frame now rather than waiting.
+          const { server_entry_id: entry, access_point_id: ap } = event;
+          if (entry != null && ap != null) {
+            this._refreshCamera(`${entry}:${ap}`);
+          }
+        },
+        { type: "sigur/panel/subscribe" },
       ),
     );
+
+    // A renamed camera entity is the case that bites: the tile would go on
+    // requesting a picture from an entity id that no longer resolves. This
+    // event is one Home Assistant lets every user subscribe to.
     this._subscriptions.push(
       this._hass.connection.subscribeEvents(
         () => this._scheduleReload(),
@@ -325,7 +378,61 @@ class SigurPanel extends HTMLElement {
 
   /** Whether the access point is among the chosen ones. */
   _isSelected(entryId, apId) {
-    return !this._selection || this._selection.has(apKey(entryId, apId));
+    return !this._shown || this._shown.has(apKey(entryId, apId));
+  }
+
+  /** The preset being looked through, if any. */
+  _preset() {
+    return this._presets.find((preset) => preset.id === this._activePreset) ?? null;
+  }
+
+  /**
+   * The preset the editor works on: the one looked through, or the one the
+   * picker's hand-made choice was started from, so it can be saved back.
+   */
+  _editorPreset() {
+    const id = this._activePreset ?? this._basePreset;
+    return this._presets.find((preset) => preset.id === id) ?? null;
+  }
+
+  /**
+   * The access points of a preset, as keys.
+   *
+   * Zones are resolved against the current structure, which is how a point
+   * added to a zone later turns up in the preset by itself.
+   */
+  _presetKeys(preset) {
+    const points = new Set(preset.access_points ?? []);
+    const zones = new Set(preset.zones ?? []);
+    const keys = new Set();
+    for (const server of this._servers) {
+      for (const ap of server.access_points) {
+        const key = apKey(server.entry_id, ap.id);
+        const zone = ap.zone_a != null ? apKey(server.entry_id, ap.zone_a) : null;
+        if (points.has(key) || (zone && zones.has(zone))) keys.add(key);
+      }
+    }
+    return keys;
+  }
+
+  /** Work out what is shown: the active preset, else the picker's choice. */
+  _updateShown() {
+    const preset = this._preset();
+    this._shown = preset ? this._presetKeys(preset) : this._selection;
+  }
+
+  /** Look through a preset, or through everything with `null`. */
+  _choosePreset(presetId) {
+    this._activePreset = presetId;
+    this._basePreset = null;
+    if (!presetId) {
+      this._selection = null;
+      saveSelection(null);
+    }
+    this._confirmDelete = false;
+    this._saveUserData();
+    this._updateShown();
+    this._render();
   }
 
   /**
@@ -335,7 +442,7 @@ class SigurPanel extends HTMLElement {
    * shown as long as any point of that server is chosen.
    */
   _eventSelected(event) {
-    if (!this._selection) return true;
+    if (!this._shown) return true;
     const entryId = event.server_entry_id;
     if (event.access_point_id != null) {
       return this._isSelected(entryId, event.access_point_id);
@@ -403,9 +510,11 @@ class SigurPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${SigurPanel.styles}</style>${this._body()}`;
     this._bind();
     this._paintPicker();
+    this._paintPresetBar();
     this._paintStates();
     this._paintFeed();
     this._startCameraRefresh();
+    if (this._pickerOpen) this._paintPresetUsers();
   }
 
   _body() {
@@ -418,11 +527,14 @@ class SigurPanel extends HTMLElement {
       )}</div>`;
     }
     if (!this._servers.length) {
-      return `<div class="center muted">Нет настроенных систем Sigur.</div>`;
+      return this._restricted
+        ? `<div class="center muted">В назначенных вам пресетах нет ни одной точки доступа.</div>`
+        : `<div class="center muted">Нет настроенных систем Sigur.</div>`;
     }
     return `
       <div class="layout">
         <main>
+          ${this._presetBar()}
           <div class="toolbar">
             <input id="filter" type="search" placeholder="Поиск точки доступа"
                    value="${escapeHtml(this._filter)}" />
@@ -501,14 +613,217 @@ class SigurPanel extends HTMLElement {
   }
 
   _currentKeys() {
-    return new Set(this._selection ?? this._allKeys());
+    return new Set(this._shown ?? this._allKeys());
   }
 
   _selectionLabel() {
-    if (!this._selection) return "Точки: все";
+    if (!this._shown) return "Точки: все";
     const all = this._allKeys();
-    const chosen = all.filter((key) => this._selection.has(key)).length;
+    const chosen = all.filter((key) => this._shown.has(key)).length;
     return `Точки: ${chosen} из ${all.length}`;
+  }
+
+  /**
+   * One button per preset, plus "all".
+   *
+   * None of them is lit while the picker holds a hand-made choice. For a user
+   * limited by presets, "all" means all of theirs - the server never sent the
+   * rest.
+   */
+  _presetBar() {
+    if (!this._presets.length) return "";
+    const chips = [
+      [null, this._restricted ? "Все мои" : "Все"],
+      ...this._presets.map((preset) => [preset.id, preset.name]),
+    ]
+      .map(
+        ([id, name]) =>
+          `<button class="chip" data-preset="${escapeHtml(id ?? "")}">${escapeHtml(
+            name,
+          )}</button>`,
+      )
+      .join("");
+    return `<nav class="presets" aria-label="Пресеты">${chips}</nav>`;
+  }
+
+  _paintPresetBar() {
+    for (const chip of this.shadowRoot.querySelectorAll(".chip[data-preset]")) {
+      const id = chip.dataset.preset || null;
+      const active =
+        id === null ? !this._activePreset && !this._selection : id === this._activePreset;
+      chip.classList.toggle("active", active);
+      chip.setAttribute("aria-pressed", String(active));
+    }
+  }
+
+  /**
+   * The current choice as a preset's members.
+   *
+   * A zone that is chosen whole is stored as the zone, so points added to it
+   * later join the preset by themselves; anything else as single points.
+   */
+  _presetMembers() {
+    const shown = this._shown ?? new Set(this._allKeys());
+    const accessPoints = [];
+    const zones = [];
+    for (const server of this._servers) {
+      const byZone = new Map();
+      for (const ap of server.access_points) {
+        const zone = ap.zone_a ?? `ap:${ap.id}`;
+        if (!byZone.has(zone)) byZone.set(zone, []);
+        byZone.get(zone).push(ap);
+      }
+      for (const [zone, points] of byZone) {
+        const keys = points.map((ap) => apKey(server.entry_id, ap.id));
+        if (typeof zone === "number" && keys.every((key) => shown.has(key))) {
+          zones.push(apKey(server.entry_id, zone));
+        } else {
+          accessPoints.push(...keys.filter((key) => shown.has(key)));
+        }
+      }
+    }
+    return { access_points: accessPoints, zones };
+  }
+
+  /**
+   * The preset editor at the foot of the picker, for administrators.
+   *
+   * It saves whatever the picker currently shows, so making a preset is: tick
+   * the points, name it, choose who it is for.
+   */
+  _presetEditor() {
+    if (!this._isAdmin) return "";
+    const preset = this._editorPreset();
+    const quoted = preset ? `«${escapeHtml(preset.name)}»` : "";
+    return `
+      <div class="preset-editor">
+        <h4>Пресет</h4>
+        <input id="preset-name" placeholder="Название пресета"
+               value="${escapeHtml(preset?.name ?? "")}" />
+        <div class="preset-users" id="preset-users">
+          <span class="muted">Загрузка пользователей…</span>
+        </div>
+        <p class="hint">
+          Пользователь, отмеченный хотя бы в одном пресете, видит в панели
+          только точки своих пресетов и их события. Пресет без отмеченных
+          пользователей — просто общий вид, он никого не ограничивает.
+          Администраторы видят всё всегда. Зона, отмеченная целиком,
+          сохраняется как зона: новые точки в ней попадут в пресет сами.
+        </p>
+        <div class="editor-actions">
+          <button id="preset-save-new">Сохранить как новый</button>
+          ${
+            preset
+              ? `<button id="preset-update" class="primary">Сохранить в ${quoted}</button>
+                 <button id="preset-delete">${
+                   this._confirmDelete ? "Точно удалить?" : `Удалить ${quoted}`
+                 }</button>`
+              : ""
+          }
+        </div>
+      </div>`;
+  }
+
+  /** Fill the editor's user list; fetched once, when first needed. */
+  async _paintPresetUsers() {
+    const container = this.shadowRoot.getElementById("preset-users");
+    if (!container) return;
+    if (this._users === null) {
+      // Opening the picker and a re-render can both ask; fetch only once.
+      this._usersRequest ??= this._hass.callWS({ type: "config/auth/list" });
+      try {
+        const users = await this._usersRequest;
+        // Administrators see everything whatever a preset says, and system
+        // users never open a panel, so neither is worth offering.
+        this._users = users
+          .filter(
+            (user) =>
+              !user.system_generated &&
+              user.is_active &&
+              !(user.group_ids ?? []).includes("system-admin"),
+          )
+          .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      } catch (err) {
+        this._usersRequest = null;
+        container.innerHTML = `<span class="error">${escapeHtml(
+          err?.message ?? String(err),
+        )}</span>`;
+        return;
+      }
+    }
+    // The picker may have been rebuilt while the list was on its way.
+    const current = this.shadowRoot.getElementById("preset-users");
+    if (current !== container) return;
+    const assigned = new Set(this._editorPreset()?.users ?? []);
+    container.innerHTML = this._users.length
+      ? `<span class="muted">Назначить пользователям:</span>${this._users
+          .map(
+            (user) => `
+          <label>
+            <input type="checkbox" data-user="${escapeHtml(user.id)}"
+                   ${assigned.has(user.id) ? "checked" : ""} />
+            <span>${escapeHtml(user.name ?? user.id)}</span>
+          </label>`,
+          )
+          .join("")}`
+      : `<span class="muted">Пользователей без прав администратора нет — назначать некому.</span>`;
+  }
+
+  async _savePreset({ update }) {
+    const root = this.shadowRoot;
+    const name = root.getElementById("preset-name")?.value.trim() ?? "";
+    if (!name) {
+      this._toast("Дайте пресету название");
+      return;
+    }
+    const users = [...root.querySelectorAll("input[data-user]:checked")].map(
+      (box) => box.dataset.user,
+    );
+    const preset = update ? this._editorPreset() : null;
+    let saved;
+    try {
+      saved = await this._hass.callWS({
+        type: "sigur/presets/save",
+        ...(preset ? { preset_id: preset.id } : {}),
+        name,
+        users: this._users === null && preset ? preset.users : users,
+        ...this._presetMembers(),
+      });
+    } catch (err) {
+      this._toast(err?.message ?? String(err));
+      return;
+    }
+    this._activePreset = saved.id;
+    this._basePreset = null;
+    this._selection = null;
+    saveSelection(null);
+    this._saveUserData();
+    this._toast(preset ? "Пресет сохранён" : "Пресет создан");
+    await this._load();
+  }
+
+  async _deletePreset() {
+    const preset = this._editorPreset();
+    if (!preset) return;
+    if (!this._confirmDelete) {
+      this._confirmDelete = true;
+      const button = this.shadowRoot.getElementById("preset-delete");
+      if (button) button.textContent = "Точно удалить?";
+      return;
+    }
+    this._confirmDelete = false;
+    try {
+      await this._hass.callWS({
+        type: "sigur/presets/delete",
+        preset_id: preset.id,
+      });
+    } catch (err) {
+      this._toast(err?.message ?? String(err));
+      return;
+    }
+    this._toast("Пресет удалён");
+    this._choosePreset(null);
+    await this._load();
   }
 
   /**
@@ -559,6 +874,7 @@ class SigurPanel extends HTMLElement {
           <button data-pick-close class="primary">Готово</button>
         </div>
         <div class="picker-list">${servers}</div>
+        ${this._presetEditor()}
       </div>`;
   }
 
@@ -568,9 +884,15 @@ class SigurPanel extends HTMLElement {
     this.shadowRoot
       .getElementById("picker-toggle")
       ?.setAttribute("aria-expanded", String(open));
+    if (open) this._paintPresetUsers();
   }
 
-  /** Apply a new selection: remember it, then repaint tiles and the feed. */
+  /**
+   * Apply a hand-made selection: remember it, then repaint tiles and the feed.
+   *
+   * Editing the picker while looking through a preset starts from that
+   * preset's points and leaves the preset itself untouched.
+   */
   _setSelection(keys) {
     const all = this._allKeys();
     // Choosing every point is stored as "all", so that access points added
@@ -578,7 +900,14 @@ class SigurPanel extends HTMLElement {
     const everything = all.every((key) => keys.has(key));
     this._selection = everything ? null : keys;
     saveSelection(this._selection);
+    if (this._activePreset) {
+      this._basePreset = this._activePreset;
+      this._activePreset = null;
+      this._saveUserData();
+    }
+    this._updateShown();
     this._paintPicker();
+    this._paintPresetBar();
     this._paintStates();
     this._paintFeed();
   }
@@ -586,7 +915,7 @@ class SigurPanel extends HTMLElement {
   /** Bring the picker's boxes and the toolbar label in step with the selection. */
   _paintPicker() {
     const root = this.shadowRoot;
-    const chosen = (key) => !this._selection || this._selection.has(key);
+    const chosen = (key) => !this._shown || this._shown.has(key);
     for (const box of root.querySelectorAll("input[data-pick]")) {
       box.checked = chosen(box.dataset.pick);
     }
@@ -829,6 +1158,20 @@ class SigurPanel extends HTMLElement {
 
   _bindPicker() {
     const root = this.shadowRoot;
+    for (const chip of root.querySelectorAll(".chip[data-preset]")) {
+      chip.addEventListener("click", (event) =>
+        this._choosePreset(event.currentTarget.dataset.preset || null),
+      );
+    }
+    root
+      .getElementById("preset-save-new")
+      ?.addEventListener("click", () => this._savePreset({ update: false }));
+    root
+      .getElementById("preset-update")
+      ?.addEventListener("click", () => this._savePreset({ update: true }));
+    root
+      .getElementById("preset-delete")
+      ?.addEventListener("click", () => this._deletePreset());
     root
       .getElementById("picker-toggle")
       ?.addEventListener("click", () => this._togglePicker());
@@ -1163,6 +1506,65 @@ SigurPanel.styles = `
   .pick-group { font-weight: 500; }
   .pick-zone .pick-ap { padding-left: 22px; }
   .pick-zone label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--divider-color);
+    background: var(--card-background-color);
+    color: inherit;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .chip:hover { border-color: var(--primary-color); }
+  .chip.active {
+    border-color: transparent;
+    background: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
+
+  .preset-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--divider-color);
+  }
+  .preset-editor h4 { margin: 0; font-size: 14px; font-weight: 500; }
+  #preset-name {
+    max-width: 360px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--divider-color);
+    background: var(--secondary-background-color);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+  }
+  #preset-name:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
+  .preset-users { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+  .preset-users label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .preset-editor .hint { margin: 0; font-size: 11px; color: var(--secondary-text-color); }
+  .preset-editor .editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .preset-editor .editor-actions button {
+    flex: 0 1 auto;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--divider-color);
+    background: var(--secondary-background-color);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .preset-editor .editor-actions .primary {
+    border-color: transparent;
+    background: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
 
   .camera {
     height: 96px;
