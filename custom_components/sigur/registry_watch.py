@@ -73,8 +73,12 @@ def async_watch_entity_registry(hass: HomeAssistant, entry_id: str) -> CALLBACK_
 
 
 @callback
-def async_notify_panel(hass: HomeAssistant, entry_id: str) -> None:
-    """Tell any open panel that its cached structure is out of date."""
+def async_notify_panel(hass: HomeAssistant, entry_id: str | None = None) -> None:
+    """Tell any open panel that its cached structure is out of date.
+
+    ``entry_id`` is None for a change that is not about one server, such as an
+    edited preset.
+    """
     hass.bus.async_fire(PANEL_DATA_CHANGED, {"entry_id": entry_id})
 
 

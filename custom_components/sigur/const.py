@@ -94,6 +94,10 @@ STORAGE_KEY: Final = f"{DOMAIN}.state"
 BINDINGS_STORAGE_VERSION: Final = 1
 BINDINGS_STORAGE_KEY: Final = f"{DOMAIN}.bindings"
 
+#: Panel presets span servers, so there is one store for the whole integration.
+PRESETS_STORAGE_VERSION: Final = 1
+PRESETS_STORAGE_KEY: Final = f"{DOMAIN}.presets"
+
 # --- Sidebar panel ----------------------------------------------------------
 
 PANEL_URL_PATH: Final = "sigur"
