@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-25
+
 ### Добавлено
 
 - Выбор точек доступа в панели. Кнопка «Точки» в панели инструментов
@@ -39,7 +41,6 @@
 - URL потоков RTSP, где обычно лежат логин и пароль камеры, панель отдавала
   всем пользователям, хотя нужны они только редактору привязок. Теперь —
   только администраторам.
-
 - Интеграция снова загружается на Home Assistant 2026.2 — самой старой
   версии, которую обещает `hacs.json`. В 0.2.5 `StaticPathConfig` стал
   импортироваться из `homeassistant.components.http.server`, а этого модуля
@@ -236,7 +237,8 @@
 - Русский и английский переводы, с сообщениями об ошибках на языке Home
   Assistant.
 
-[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/gOsToFf/home-assistant-sigur/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.3.0
 [0.2.5]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.5
 [0.2.4]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.4
 [0.2.3]: https://github.com/gOsToFf/home-assistant-sigur/releases/tag/v0.2.3
