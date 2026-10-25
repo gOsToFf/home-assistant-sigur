@@ -25,8 +25,17 @@ const RELOAD_DEBOUNCE_MS = 400;
  * points would otherwise pull a hundred JPEGs from cameras on every tick.
  */
 const CAMERA_REFRESH_MS = 30000;
-/** How many events the feed keeps. Older ones live in the recorder. */
+/** How many events the feed shows. Older ones live in the recorder. */
 const FEED_LIMIT = 60;
+/**
+ * How many events are kept behind the feed.
+ *
+ * More than are shown, so that narrowing the access point selection still
+ * leaves something to look at instead of only what happened after the click.
+ */
+const FEED_BUFFER = 300;
+/** Where the chosen access points are remembered, per browser. */
+const SELECTION_STORAGE_KEY = "sigur-panel-selection";
 
 const MODE_LABELS = {
   normal: "Нормальный",
@@ -100,6 +109,40 @@ const escapeHtml = (value) =>
       })[char],
   );
 
+/** The key an access point goes by across servers: `entry_id:ap_id`. */
+const apKey = (entryId, apId) => `${entryId}:${apId}`;
+
+/**
+ * The remembered selection: a set of access point keys, or null for "all".
+ *
+ * Storage can be missing or throw (private windows, blocked site data); the
+ * panel then simply starts with everything shown.
+ */
+const loadSelection = () => {
+  try {
+    const raw = window.localStorage.getItem(SELECTION_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? new Set(parsed.map(String)) : null;
+  } catch {
+    return null;
+  }
+};
+
+const saveSelection = (selection) => {
+  try {
+    if (selection) {
+      window.localStorage.setItem(
+        SELECTION_STORAGE_KEY,
+        JSON.stringify([...selection]),
+      );
+    } else {
+      window.localStorage.removeItem(SELECTION_STORAGE_KEY);
+    }
+  } catch {
+    // Not remembered across reloads, which is all that is lost.
+  }
+};
+
 const formatTime = (iso) => {
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
@@ -122,6 +165,8 @@ class SigurPanel extends HTMLElement {
     this._unsubscribe = null;
     this._filter = "";
     this._onlyProblems = false;
+    this._selection = loadSelection();
+    this._pickerOpen = false;
     this._isAdmin = false;
     this._editing = null;
     this._subscriptions = [];
@@ -184,7 +229,7 @@ class SigurPanel extends HTMLElement {
   _subscribe() {
     this._subscriptions.push(
       this._hass.connection.subscribeEvents((event) => {
-        this._feed = [event.data, ...this._feed].slice(0, FEED_LIMIT);
+        this._feed = [event.data, ...this._feed].slice(0, FEED_BUFFER);
         this._paintFeed();
         // Something happened at this door, which is exactly when its camera
         // is worth looking at. Refetch that frame now rather than waiting.
@@ -278,6 +323,29 @@ class SigurPanel extends HTMLElement {
     };
   }
 
+  /** Whether the access point is among the chosen ones. */
+  _isSelected(entryId, apId) {
+    return !this._selection || this._selection.has(apKey(entryId, apId));
+  }
+
+  /**
+   * Whether an event belongs to the chosen access points.
+   *
+   * An event with no access point - the server itself lost its link - is
+   * shown as long as any point of that server is chosen.
+   */
+  _eventSelected(event) {
+    if (!this._selection) return true;
+    const entryId = event.server_entry_id;
+    if (event.access_point_id != null) {
+      return this._isSelected(entryId, event.access_point_id);
+    }
+    const server = this._servers.find((item) => item.entry_id === entryId);
+    return (server?.access_points ?? []).some((ap) =>
+      this._isSelected(entryId, ap.id),
+    );
+  }
+
   _matchesFilter(ap) {
     if (!this._filter) return true;
     const needle = this._filter.toLowerCase();
@@ -334,6 +402,7 @@ class SigurPanel extends HTMLElement {
   _render() {
     this.shadowRoot.innerHTML = `<style>${SigurPanel.styles}</style>${this._body()}`;
     this._bind();
+    this._paintPicker();
     this._paintStates();
     this._paintFeed();
     this._startCameraRefresh();
@@ -361,8 +430,16 @@ class SigurPanel extends HTMLElement {
               <input id="problems" type="checkbox" ${this._onlyProblems ? "checked" : ""} />
               <span>Только проблемные</span>
             </label>
+            <button id="picker-toggle" aria-expanded="${this._pickerOpen}"
+                    title="Выбрать, какие точки доступа показывать">${escapeHtml(
+                      this._selectionLabel(),
+                    )}</button>
             <button id="reload" title="Перечитать список точек доступа">Обновить</button>
           </div>
+          ${this._picker()}
+          <p id="nothing-selected" class="center muted hidden">
+            Не выбрано ни одной точки доступа.
+          </p>
           ${this._servers.map((server) => this._server(server)).join("")}
           ${this._cameraOptions()}
         </main>
@@ -373,14 +450,19 @@ class SigurPanel extends HTMLElement {
       </div>`;
   }
 
-  _server(server) {
+  /** Group a server's access points under the zone on their A side. */
+  _zonesOf(server) {
     const zones = new Map();
     for (const ap of server.access_points) {
       const key = ap.zone_a_name || (ap.zone_a != null ? `Зона ${ap.zone_a}` : "Без зоны");
       if (!zones.has(key)) zones.set(key, []);
       zones.get(key).push(ap);
     }
-    const sections = [...zones.entries()]
+    return zones;
+  }
+
+  _server(server) {
+    const sections = [...this._zonesOf(server).entries()]
       .map(
         ([zone, points]) => `
         <section class="zone" data-zone="${escapeHtml(zone)}">
@@ -393,7 +475,7 @@ class SigurPanel extends HTMLElement {
       .join("");
 
     return `
-      <section class="server">
+      <section class="server" data-entry="${escapeHtml(server.entry_id)}">
         <header>
           <h2>${escapeHtml(server.name)}</h2>
           <div class="badges">
@@ -410,6 +492,112 @@ class SigurPanel extends HTMLElement {
         </header>
         ${sections}
       </section>`;
+  }
+
+  _allKeys() {
+    return this._servers.flatMap((server) =>
+      server.access_points.map((ap) => apKey(server.entry_id, ap.id)),
+    );
+  }
+
+  _currentKeys() {
+    return new Set(this._selection ?? this._allKeys());
+  }
+
+  _selectionLabel() {
+    if (!this._selection) return "Точки: все";
+    const all = this._allKeys();
+    const chosen = all.filter((key) => this._selection.has(key)).length;
+    return `Точки: ${chosen} из ${all.length}`;
+  }
+
+  /**
+   * The access point picker: server, then zone, then point, each with a box.
+   *
+   * A zone's box ticks every point under it. The panel shows only what is
+   * chosen here, the event feed included.
+   */
+  _picker() {
+    const servers = this._servers
+      .map((server) => {
+        const zones = [...this._zonesOf(server).entries()]
+          .map(
+            ([zone, points]) => `
+            <div class="pick-zone">
+              <label class="pick-group">
+                <input type="checkbox" data-pick-group="${escapeHtml(
+                  points.map((ap) => apKey(server.entry_id, ap.id)).join(" "),
+                )}" />
+                <span>${escapeHtml(zone)}</span>
+              </label>
+              ${points
+                .map(
+                  (ap) => `
+                <label class="pick-ap">
+                  <input type="checkbox" data-pick="${escapeHtml(
+                    apKey(server.entry_id, ap.id),
+                  )}" />
+                  <span>${escapeHtml(ap.name)}</span>
+                </label>`,
+                )
+                .join("")}
+            </div>`,
+          )
+          .join("");
+        return `
+          <div class="pick-server">
+            ${this._servers.length > 1 ? `<h4>${escapeHtml(server.name)}</h4>` : ""}
+            ${zones}
+          </div>`;
+      })
+      .join("");
+    return `
+      <div id="picker" class="picker" ${this._pickerOpen ? "" : "hidden"}>
+        <div class="picker-actions">
+          <button data-pick-all>Все</button>
+          <button data-pick-none>Ничего</button>
+          <button data-pick-close class="primary">Готово</button>
+        </div>
+        <div class="picker-list">${servers}</div>
+      </div>`;
+  }
+
+  _togglePicker(open = !this._pickerOpen) {
+    this._pickerOpen = open;
+    this.shadowRoot.getElementById("picker")?.toggleAttribute("hidden", !open);
+    this.shadowRoot
+      .getElementById("picker-toggle")
+      ?.setAttribute("aria-expanded", String(open));
+  }
+
+  /** Apply a new selection: remember it, then repaint tiles and the feed. */
+  _setSelection(keys) {
+    const all = this._allKeys();
+    // Choosing every point is stored as "all", so that access points added
+    // later show up instead of being quietly left out.
+    const everything = all.every((key) => keys.has(key));
+    this._selection = everything ? null : keys;
+    saveSelection(this._selection);
+    this._paintPicker();
+    this._paintStates();
+    this._paintFeed();
+  }
+
+  /** Bring the picker's boxes and the toolbar label in step with the selection. */
+  _paintPicker() {
+    const root = this.shadowRoot;
+    const chosen = (key) => !this._selection || this._selection.has(key);
+    for (const box of root.querySelectorAll("input[data-pick]")) {
+      box.checked = chosen(box.dataset.pick);
+    }
+    for (const box of root.querySelectorAll("input[data-pick-group]")) {
+      const keys = box.dataset.pickGroup.split(" ");
+      const count = keys.filter(chosen).length;
+      box.checked = count === keys.length;
+      box.indeterminate = count > 0 && count < keys.length;
+    }
+    const toggle = root.getElementById("picker-toggle");
+    if (toggle) toggle.textContent = this._selectionLabel();
   }
 
   _tile(server, ap) {
@@ -606,6 +794,7 @@ class SigurPanel extends HTMLElement {
         this._paintStates();
       });
     }
+    this._bindPicker();
     for (const select of this.shadowRoot.querySelectorAll("select.mode")) {
       select.addEventListener("change", (event) =>
         this._setMode(event.target.dataset.entity, event.target.value),
@@ -638,6 +827,43 @@ class SigurPanel extends HTMLElement {
     }
   }
 
+  _bindPicker() {
+    const root = this.shadowRoot;
+    root
+      .getElementById("picker-toggle")
+      ?.addEventListener("click", () => this._togglePicker());
+    root
+      .querySelector("[data-pick-close]")
+      ?.addEventListener("click", () => this._togglePicker(false));
+    root
+      .querySelector("[data-pick-all]")
+      ?.addEventListener("click", () => this._setSelection(new Set(this._allKeys())));
+    root
+      .querySelector("[data-pick-none]")
+      ?.addEventListener("click", () => this._setSelection(new Set()));
+    for (const box of root.querySelectorAll("input[data-pick]")) {
+      box.addEventListener("change", (event) => {
+        const keys = this._currentKeys();
+        if (event.target.checked) keys.add(event.target.dataset.pick);
+        else keys.delete(event.target.dataset.pick);
+        this._setSelection(keys);
+      });
+    }
+    for (const box of root.querySelectorAll("input[data-pick-group]")) {
+      box.addEventListener("change", (event) => {
+        const keys = this._currentKeys();
+        for (const key of event.target.dataset.pickGroup.split(" ")) {
+          if (event.target.checked) keys.add(key);
+          else keys.delete(key);
+        }
+        this._setSelection(keys);
+      });
+    }
+    root.getElementById("picker")?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") this._togglePicker(false);
+    });
+  }
+
   /** Repaint the live parts of every tile without rebuilding the DOM. */
   _paintStates() {
     if (!this._loaded || this._error) return;
@@ -650,7 +876,9 @@ class SigurPanel extends HTMLElement {
 
         const state = this._tileState(ap);
         const visible =
-          this._matchesFilter(ap) && (!this._onlyProblems || state.problem);
+          this._isSelected(server.entry_id, ap.id) &&
+          this._matchesFilter(ap) &&
+          (!this._onlyProblems || state.problem);
         tile.classList.toggle("hidden", !visible);
         tile.classList.toggle("offline", !state.online);
         tile.classList.toggle("alert", state.door === "on");
@@ -706,6 +934,29 @@ class SigurPanel extends HTMLElement {
       }
     }
     this._paintZoneVisibility();
+    this._paintServerVisibility();
+  }
+
+  /**
+   * Hide a server none of whose points are chosen.
+   *
+   * Only the selection counts here, not the search or the problems toggle: a
+   * server whose doors are all fine should still show its connection badge.
+   */
+  _paintServerVisibility() {
+    let anyChosen = false;
+    for (const section of this.shadowRoot.querySelectorAll("section.server")) {
+      const entryId = section.dataset.entry;
+      const server = this._servers.find((item) => item.entry_id === entryId);
+      const chosen = (server?.access_points ?? []).some((ap) =>
+        this._isSelected(entryId, ap.id),
+      );
+      section.classList.toggle("hidden", !chosen);
+      anyChosen ||= chosen;
+    }
+    this.shadowRoot
+      .getElementById("nothing-selected")
+      ?.classList.toggle("hidden", anyChosen);
   }
 
   /** Hide a zone heading once every tile under it is filtered away. */
@@ -719,11 +970,16 @@ class SigurPanel extends HTMLElement {
   _paintFeed() {
     const feed = this.shadowRoot.getElementById("feed");
     if (!feed) return;
-    if (!this._feed.length) {
-      feed.innerHTML = `<p class="muted">Пока ничего не произошло. События появятся здесь сразу, как только придут.</p>`;
+    const events = this._feed
+      .filter((event) => this._eventSelected(event))
+      .slice(0, FEED_LIMIT);
+    if (!events.length) {
+      feed.innerHTML = this._feed.length
+        ? `<p class="muted">По выбранным точкам доступа событий пока не было.</p>`
+        : `<p class="muted">Пока ничего не произошло. События появятся здесь сразу, как только придут.</p>`;
       return;
     }
-    feed.innerHTML = this._feed
+    feed.innerHTML = events
       .map((event) => {
         const category = event.category ?? "unknown";
         const direction = DIRECTION_LABELS[event.direction] ?? "";
@@ -849,7 +1105,8 @@ SigurPanel.styles = `
     font-size: 12px;
     color: var(--secondary-text-color);
   }
-  #reload {
+  #reload,
+  #picker-toggle {
     padding: 8px 14px;
     border-radius: 999px;
     border: 1px solid var(--divider-color);
@@ -858,7 +1115,54 @@ SigurPanel.styles = `
     font: inherit;
     cursor: pointer;
   }
-  #reload:hover { border-color: var(--primary-color); color: var(--primary-color); }
+  #reload:hover,
+  #picker-toggle:hover { border-color: var(--primary-color); color: var(--primary-color); }
+  #picker-toggle[aria-expanded="true"] { border-color: var(--primary-color); }
+
+  .picker {
+    margin: -4px 0 16px;
+    padding: 12px 14px;
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--card-background-color);
+    box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.08));
+  }
+  .picker[hidden] { display: none; }
+  .picker-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+  .picker-actions button {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--divider-color);
+    background: var(--secondary-background-color);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .picker-actions .primary {
+    margin-left: auto;
+    border-color: transparent;
+    background: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
+  .picker-list {
+    max-height: 50vh;
+    overflow: auto;
+    columns: 240px;
+    column-gap: 20px;
+  }
+  .pick-server h4 { margin: 4px 0 6px; font-size: 14px; font-weight: 500; }
+  .pick-zone { break-inside: avoid; margin-bottom: 10px; }
+  .pick-zone label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .pick-group { font-weight: 500; }
+  .pick-zone .pick-ap { padding-left: 22px; }
+  .pick-zone label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .camera {
     height: 96px;
