@@ -37,14 +37,29 @@ jobs:
         run: mypy
 
   test:
-    name: Tests
+    name: Tests (Home Assistant ${{ matrix.home-assistant }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - home-assistant: newest
+            python: "3.14"
+            harness: ""
+          # The oldest release hacs.json promises. Testing only the newest let
+          # an import that does not exist there ship in 0.2.5: the integration
+          # did not load at all on the version it claims to support.
+          - home-assistant: "2026.2.0"
+            python: "3.13"
+            harness: "0.13.313"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python }}
       - uses: ./.github/actions/install-test-deps
+        with:
+          harness-version: ${{ matrix.harness }}
       - name: Run the test suite
         run: python -m pytest -q
 
